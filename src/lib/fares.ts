@@ -138,7 +138,7 @@ export function quoteFare(segments: FareSegment[], category: FareCategory = "adu
   };
 }
 
-/** Fare for a planned TQuest journey. The planner covers rapid transit, so every leg is a subway-fare segment. */
+/** Fare for a planned Bostie journey. The planner covers rapid transit, so every leg is a subway-fare segment. */
 export function journeyFare(plan: Plan, category: FareCategory = "adult", style: PaymentStyle = "tap"): FareQuote {
   const segments: FareSegment[] = plan.legs.map((leg) => ({
     mode: "subway",

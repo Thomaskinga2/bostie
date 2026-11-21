@@ -10,10 +10,10 @@ const hanken = Hanken_Grotesk({ variable: "--font-hanken", subsets: ["latin"] })
 const caveat = Caveat({ variable: "--font-caveat", subsets: ["latin"], weight: ["500", "700"] });
 
 export const metadata: Metadata = {
-  title: "TQuest: make every ride an adventure",
+  title: "Bostie: make every ride an adventure",
   description: "Turn Boston's MBTA into a city exploration game: guided journeys, station stamps, Gemini landmark recognition and Guess Boston.",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "TQuest", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Bostie", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

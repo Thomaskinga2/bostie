@@ -1,4 +1,4 @@
-// THE JUDGE GUIDE: the single source of truth for how a newcomer is walked through TQuest.
+// THE JUDGE GUIDE: the single source of truth for how a newcomer is walked through Bostie.
 //
 // Two things live here:
 //   TOUR        : on-screen highlights. The first time someone reaches a screen, each
@@ -81,7 +81,7 @@ export const TOUR: Record<Scene, Spot[]> = {
   ],
   "play-result": [
     { target: "round-score", title: "Scored by rules, not by AI", body: "Points come from misses, hints and speed. XP is a fixed fraction of the score." },
-    { target: "round-debrief", title: "Your debrief", body: "Gemini explains the tells, the history and how to get there on the T, using only TQuest's verified notes." },
+    { target: "round-debrief", title: "Your debrief", body: "Gemini explains the tells, the history and how to get there on the T, using only Bostie's verified notes." },
     { target: "next-round", title: "A round picked for you", body: "Gemini chooses your next photo from a shortlist that code built for your level." },
   ],
   scan: [

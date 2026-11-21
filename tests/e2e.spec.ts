@@ -324,7 +324,7 @@ test("Guess Boston: hints, wrong guesses, reveal, and Gemini being down", async 
   }
   await dismissRewards(page);
   await expect(page.getByText("Not this time. It was")).toBeVisible();
-  await expect(page.getByText("Gemini is unreachable, so this is TQuest's reference note.")).toBeVisible();
+  await expect(page.getByText("Gemini is unreachable, so this is Bostie's reference note.")).toBeVisible();
   const round = (await store(page)).events[0];
   expect(round).toMatchObject({ t: "round", correct: false, score: 0, hints: 1 });
   expect(await xpTotal(page)).toBe(5); // participation XP only

@@ -1,4 +1,4 @@
-# TQuest implementation progress
+# Bostie implementation progress
 
 Status as of 2026-11-21. Priorities follow the build brief (P0 required, P1 after, P2 stretch).
 

@@ -139,7 +139,7 @@ export function FareSummary({ plan, className }: { plan: Plan; className?: strin
 
               <div className="rounded-2xl bg-paper px-3.5 py-3">
                 <p className="text-[13px] text-ink-soft">
-                  Prices and rules from mbta.com, checked on {verified}. Fares can change, and TQuest does not sell tickets or take payments.
+                  Prices and rules from mbta.com, checked on {verified}. Fares can change, and Bostie does not sell tickets or take payments.
                 </p>
                 <a href={FARE_SOURCES.overview} target="_blank" rel="noreferrer" className="mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-forest text-[14.5px] font-semibold text-paper">
                   Official MBTA fares <ExternalLink size={15} aria-hidden />

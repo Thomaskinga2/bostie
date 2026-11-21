@@ -144,7 +144,7 @@ export default function ScanPage() {
           <section className="mt-6">
             <h2 className="text-[21px] font-bold">Why it matters</h2>
             <p className="mt-1.5 text-[16px] leading-relaxed">{res.result.historicalSummary}</p>
-            <p className="mt-1.5 text-[12.5px] text-ink-faint">Written by Gemini from TQuest&apos;s reference notes.</p>
+            <p className="mt-1.5 text-[12.5px] text-ink-faint">Written by Gemini from Bostie&apos;s reference notes.</p>
           </section>
         )}
 
@@ -297,7 +297,7 @@ export default function ScanPage() {
       </section>
 
       <p className="mt-5 text-[12.5px] leading-snug text-ink-faint">
-        Photos are sent to Google Gemini for recognition and are not stored by TQuest. Please avoid photographing people, and never scan from a platform edge or roadway.
+        Photos are sent to Google Gemini for recognition and are not stored by Bostie. Please avoid photographing people, and never scan from a platform edge or roadway.
       </p>
     </div>
   );

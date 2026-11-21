@@ -166,7 +166,7 @@ export default function JourneyPage() {
       <div className="grid h-full place-items-center px-6">
         <Empty
           title="No journey yet"
-          body="Pick two stations on Ride and TQuest guides you stop by stop."
+          body="Pick two stations on Ride and Bostie guides you stop by stop."
           action={<Link href="/ride" className="inline-flex h-11 items-center rounded-full bg-forest px-6 text-[15px] font-bold text-paper">Plan a journey</Link>}
         />
       </div>
@@ -247,7 +247,7 @@ export default function JourneyPage() {
             </StationSign>
             <p className="flex items-start gap-3 rounded-2xl bg-moss px-4 py-3 text-[14.5px] text-forest-deep">
               <Footprints size={19} className="mt-0.5 shrink-0" aria-hidden />
-              Keep your eyes up while you walk. TQuest never asks you to look at your phone near the platform edge.
+              Keep your eyes up while you walk. Bostie never asks you to look at your phone near the platform edge.
             </p>
             <p className="flex items-start gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-[14.5px]">
               <CreditCard size={19} className="mt-0.5 shrink-0 text-forest" aria-hidden />

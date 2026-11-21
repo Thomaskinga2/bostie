@@ -8,7 +8,7 @@ import { Button } from "../ui";
 
 export function Logo({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="TQuest">
+    <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="Bostie">
       <circle cx="24" cy="24" r="22" fill="#1f4b3a" />
       <circle cx="24" cy="24" r="17.5" fill="none" stroke="#f5efe0" strokeWidth="1" strokeDasharray="1.2 2.6" />
       <path d="M13 15.5h22v5.2H27v16h-6v-16h-8z" fill="#f5efe0" />
@@ -194,7 +194,7 @@ export function Welcome() {
         <div className="scroll-area flex h-full flex-col px-6 pb-7 pt-6">
           <div className="flex items-center gap-2.5">
             <Logo size={34} />
-            <span className="font-display text-[21px] font-bold">TQuest</span>
+            <span className="font-display text-[21px] font-bold">Bostie</span>
           </div>
 
           <motion.h1
@@ -207,7 +207,7 @@ export function Welcome() {
             className="mt-3 max-w-[30ch] text-[16px] leading-relaxed text-ink-soft"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25, duration: 0.5 }}
           >
-            Ride the T, collect a stamp at every station, and let Gemini verify the landmarks you find along the way.
+            Use Bostie to explore the city, collect a stamp at every station, and have fun all the way with our game.
           </motion.p>
 
           <div className="my-auto py-5">

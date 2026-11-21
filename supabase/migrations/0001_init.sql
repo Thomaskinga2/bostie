@@ -1,4 +1,4 @@
--- TQuest schema.
+-- Bostie schema.
 --
 -- Design in one minute:
 --   * CATALOGUE tables (stations, landmarks, stamps, achievements, challenges,

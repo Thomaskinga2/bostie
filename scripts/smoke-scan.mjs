@@ -11,7 +11,7 @@ const cases = [
 ];
 let failed = 0;
 for (const [photo, expected, location] of cases) {
-  const img = await fetch(wiki[photo].src.replace("/960px-", "/500px-"), { headers: { "User-Agent": "TQuestSmokeTest/0.1" } });
+  const img = await fetch(wiki[photo].src.replace("/960px-", "/500px-"), { headers: { "User-Agent": "BostieSmokeTest/0.1" } });
   if (!img.ok) { console.log(`skip ${photo}: image ${img.status}`); continue; }
   const image = Buffer.from(await img.arrayBuffer()).toString("base64");
   const res = await fetch(`${base}/api/scan`, {

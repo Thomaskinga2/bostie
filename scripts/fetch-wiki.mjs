@@ -6,7 +6,7 @@
 import { writeFileSync } from "node:fs";
 import { PLACES } from "../src/data/places.ts";
 
-const UA = { "User-Agent": "TQuestBuildScript/0.1 (hackathon project; node fetch)" };
+const UA = { "User-Agent": "BostieBuildScript/0.1 (hackathon project; node fetch)" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const api = async (host, params) => {
   const url = `https://${host}/w/api.php?${new URLSearchParams({ action: "query", format: "json", formatversion: "2", ...params })}`;

@@ -1,6 +1,6 @@
-# TQuest
+# Bostie
 
-**Make every ride an adventure.** TQuest turns Boston's MBTA into a city exploration game: plan a real route, collect a stamp at every station you ride through, let Gemini verify the landmarks you photograph, and play Guess Boston while you wait for the train.
+**Make every ride an adventure.** Bostie turns Boston's MBTA into a city exploration game: plan a real route, collect a stamp at every station you ride through, let Gemini verify the landmarks you photograph, and play Guess Boston while you wait for the train.
 
 Built for two hackathon tracks: **Transit Gamification** and **Best Use of Gemini API**.
 
@@ -31,7 +31,7 @@ The app runs with only `GEMINI_API_KEY`. Without it, transit, the map, stamps an
 | Guess Boston | Photo guessing game. Gemini links free-text guesses to catalogue entries, writes adaptive hints, writes the debrief and picks the next round from a server-built pool. | Answers, scoring, difficulty tiers and XP are all code. |
 | Gamification | XP ledger, 12 levels, streaks, 10 achievements, 6 challenges, 148 stamps in five rarities. | One pure engine (`src/lib/gamification.ts`); every reward is an idempotent transaction. |
 | Passport | Stamp collection with search and filters, line completion, badges, journey and discovery history, saved places, XP ledger. | |
-| Adventure map (home) | Stations, lines, landmarks, saved places, position, suggested walk, active journey. | Google Maps when a key is set. Otherwise OpenStreetMap street tiles with TQuest's lines and markers drawn on top; if tiles cannot load it falls back to a labelled schematic. |
+| Adventure map (home) | Stations, lines, landmarks, saved places, position, suggested walk, active journey. | Google Maps when a key is set. Otherwise OpenStreetMap street tiles with Bostie's lines and markers drawn on top; if tiles cannot load it falls back to a labelled schematic. |
 | Explore Boston (Discover) | Choose a start, interests and a budget; get destination cards with the nearest station, travel time, why it fits, Get directions and Save. | Deterministic: places come from the catalogue and travel times from the route planner. Budget is a labelled estimate. No quest required. |
 
 ## How Gemini is used
@@ -102,7 +102,7 @@ Decisions worth knowing:
 
 - **Sources** (all checked on 21 November 2026): [fares overview](https://www.mbta.com/fares), [subway](https://www.mbta.com/fares/subway-fares), [bus](https://www.mbta.com/fares/bus-fares), [Commuter Rail](https://www.mbta.com/fares/commuter-rail-fares) and its [zone table](https://www.mbta.com/fares/commuter-rail-fares/zones), [ferry](https://www.mbta.com/fares/ferry-fares), [transfers](https://www.mbta.com/fares/transfers), [reduced fares](https://www.mbta.com/fares/reduced), [contactless](https://www.mbta.com/fares/charlie/tap-ride).
 - **What the engine knows**: subway and bus fares (adult and reduced), every Commuter Rail zone and interzone price, the four ferry fare groups, and the transfer pilot that began on 1 September 2026 (within two hours, pay only the highest-priced of subway, bus and ferry when using the same card or device; no transfers with cash; Commuter Rail tickets never include one).
-- **What the app shows**: TQuest's planner covers rapid transit, so every planned journey is a subway-fare trip: one fare however many lines you change between. Route cards show the fare beside time, changes and the next train; the fare summary adds the breakdown, ways to pay, reduced and free fares, passes, and links to MBTA's pages for bus, Commuter Rail and ferry tickets.
+- **What the app shows**: Bostie's planner covers rapid transit, so every planned journey is a subway-fare trip: one fare however many lines you change between. Route cards show the fare beside time, changes and the next train; the fare summary adds the breakdown, ways to pay, reduced and free fares, passes, and links to MBTA's pages for bus, Commuter Rail and ferry tickets.
 - **When data is missing** the quote is marked `estimate` or `unavailable` and the interface says so. Commuter Rail interzone fares are always marked as estimates, because MBTA publishes the prices but not the zone-counting rule on that page.
 - **To update after a fare change**: re-read the pages above, edit `src/data/fares.ts` (including `FARES_VERIFIED_ON`) and run `npm test`; the logic tests pin the published prices.
 

@@ -51,7 +51,7 @@ function DeskLeft() {
       <div className="flex items-center gap-3">
         <Logo size={44} />
         <div>
-          <p className="font-display text-[26px] font-bold leading-none">TQuest</p>
+          <p className="font-display text-[26px] font-bold leading-none">Bostie</p>
           <p className="mt-1 text-[14px] text-white/60">Make every ride an adventure.</p>
         </div>
       </div>

@@ -294,13 +294,13 @@ export default function PlayPage() {
                   </div>
                 ))}
                 <p className="rounded-2xl bg-moss px-4 py-3 text-[15px] leading-snug text-forest-deep">{db.debrief.coaching}</p>
-                <p className="text-[12.5px] text-ink-faint">Debrief written by Gemini from TQuest&apos;s verified notes. Score and answer are decided by code.</p>
+                <p className="text-[12.5px] text-ink-faint">Debrief written by Gemini from Bostie&apos;s verified notes. Score and answer are decided by code.</p>
               </div>
             ) : (
               <div>
                 <h2 className="text-[19px] font-bold">Why it matters</h2>
                 <p className="mt-0.5 text-[15.5px] leading-relaxed">{place.summary}</p>
-                <p className="mt-1.5 text-[12.5px] text-ink-faint">Gemini is unreachable, so this is TQuest&apos;s reference note.</p>
+                <p className="mt-1.5 text-[12.5px] text-ink-faint">Gemini is unreachable, so this is Bostie&apos;s reference note.</p>
               </div>
             )}
           </section>
@@ -358,7 +358,7 @@ export default function PlayPage() {
             {round.hints.map((h, i) => (
               <li key={`h${i}`} className="flex gap-2.5 rounded-2xl bg-gold-soft px-3.5 py-2.5 text-[14.5px] leading-snug text-[#523a09]">
                 <Lightbulb size={17} className="mt-0.5 shrink-0" aria-hidden />
-                <span>{h.text}{h.source === "offline" && <span className="block text-[12px] opacity-70">Offline hint from TQuest&apos;s notes</span>}</span>
+                <span>{h.text}{h.source === "offline" && <span className="block text-[12px] opacity-70">Offline hint from Bostie&apos;s notes</span>}</span>
               </li>
             ))}
             {round.guesses.map((g, i) => (

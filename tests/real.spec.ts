@@ -25,7 +25,7 @@ test("hints never contain the answer", async ({ request }) => {
 test("Gemini recognises a real landmark photo and rejects a non-landmark", async ({ request }) => {
   const wiki = JSON.parse(readFileSync(join(__dirname, "../src/data/wiki.json"), "utf8"));
   const photo = async (id: string) => {
-    const res = await fetch(wiki[id].src.replace("/960px-", "/500px-"), { headers: { "User-Agent": "TQuestSmokeTest/0.1" } });
+    const res = await fetch(wiki[id].src.replace("/960px-", "/500px-"), { headers: { "User-Agent": "BostieSmokeTest/0.1" } });
     test.skip(!res.ok, `Wikimedia returned ${res.status}`);
     return Buffer.from(await res.arrayBuffer()).toString("base64");
   };

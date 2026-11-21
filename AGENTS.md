@@ -30,4 +30,4 @@ If a change does not affect the guide, say so explicitly when reporting the chan
 
 - Change a fare or rule only after re-reading the official page, and update `FARES_VERIFIED_ON` in the same edit.
 - Never fill in a price from memory or from Gemini. If the data is not there, the quote must come back `estimate` or `unavailable`.
-- TQuest informs; it does not sell tickets, take payments or collect card details.
+- Bostie informs; it does not sell tickets, take payments or collect card details.

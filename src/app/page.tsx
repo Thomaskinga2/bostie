@@ -188,10 +188,10 @@ export default function HomeMap() {
   return (
     <div data-scene="home" className="relative h-full">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 space-y-2 p-3">
-        <h1 className="sr-only">TQuest adventure map</h1>
+        <h1 className="sr-only">Bostie adventure map</h1>
         <div className="flex items-center gap-2">
           <span className="pointer-events-auto flex h-11 items-center gap-2 rounded-full bg-card pl-1.5 pr-4 shadow-card">
-            <Logo size={32} /> <span className="font-display text-[18px] font-bold">TQuest</span>
+            <Logo size={32} /> <span className="font-display text-[18px] font-bold">Bostie</span>
           </span>
           <span className="flex-1" />
           {/* In demo mode the gold strip already carries the Guide button. */}

@@ -204,6 +204,7 @@ export const useStore = create<State>()(
       endJourney: () => set({ journey: null }),
     }),
     {
+      // Storage key predates the rename to Bostie; kept so nobody loses their saved progress.
       name: "tquest-v1",
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({

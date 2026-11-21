@@ -9,7 +9,7 @@ export const maxDuration = 30;
 /** A GPS fix this close to the landmark counts as being there. */
 const NEARBY_KM = 1;
 
-const SYSTEM = `You are the landmark verifier inside TQuest, a Boston transit exploration game.
+const SYSTEM = `You are the landmark verifier inside Bostie, a Boston transit exploration game.
 You are given one photo and a catalogue of known Boston landmarks with reference notes.
 
 Rules:
