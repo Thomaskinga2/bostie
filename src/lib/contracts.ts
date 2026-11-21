@@ -128,3 +128,9 @@ export type PredictionsResponse = { source: "live"; fetchedAt: string; stop: str
 
 export type Alert = { id: string; header: string; effect: string; severity: number; routes: string[]; url: string | null };
 export type AlertsResponse = { source: "live"; fetchedAt: string; alerts: Alert[] };
+
+// --- place search ----------------------------------------------------------
+
+/** One search result: where a place is. Routing to it is done by the MBTA planner. */
+export type PlaceHit = { id: string; name: string; address: string; lat: number; lng: number };
+export type PlacesResponse = { provider: "google" | "openstreetmap"; places: PlaceHit[] };

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { Alert, AlertsResponse, Prediction, PredictionsResponse } from "./contracts";
+import type { Alert, AlertsResponse, PlaceHit, PlacesResponse, Prediction, PredictionsResponse } from "./contracts";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -96,4 +96,35 @@ export async function toJpegBase64(source: Blob | HTMLVideoElement, max = 1024):
   canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
   return { base64: dataUrl.split(",")[1], dataUrl };
+}
+
+type PlaceSearch = { state: "idle" | "loading" | "done" | "unavailable"; places: PlaceHit[]; provider: PlacesResponse["provider"] | null };
+const NO_PLACES: PlaceSearch = { state: "idle", places: [], provider: null };
+
+/** Looks up addresses and places as the rider types. Waits for a pause in typing; needs 3+ characters. */
+export function usePlaceSearch(text: string, enabled: boolean): PlaceSearch {
+  const q = text.trim();
+  const active = enabled && q.length >= 3;
+  const [found, setFound] = useState<(PlaceSearch & { q: string }) | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/places?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = (await res.json()) as PlacesResponse;
+        setFound({ q, state: "done", places: data.places, provider: data.provider });
+      } catch {
+        if (!controller.signal.aborted) setFound({ q, state: "unavailable", places: [], provider: null });
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [q, active]);
+  if (!active) return NO_PLACES;
+  // Results for an earlier query are never shown against the current text.
+  return found?.q === q ? found : { state: "loading", places: [], provider: null };
 }

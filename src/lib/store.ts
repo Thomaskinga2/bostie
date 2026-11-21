@@ -9,7 +9,7 @@ import {
 } from "./gamification";
 import type { LatLng } from "./geo";
 import { GUIDE_VERSION } from "./guide";
-import { planRoute, STATION, type Plan } from "./network";
+import { planRoute, STATION, type Plan, type WalkTo } from "./network";
 
 export type Stage =
   | "planning" | "walking" | "waiting" | "boarding" | "traveling" | "transferring" | "arriving" | "exploring" | "complete";
@@ -25,6 +25,8 @@ export type Journey = {
   /** While traveling: index (within the leg's stops) of the station the train is heading to. */
   stop: number;
   startedAt: number;
+  /** Set when the trip is to an address or place: the walk from the last station. */
+  walkTo?: WalkTo;
 };
 
 export type Celebration = { id: string; kind: "stamp" | "achievement" | "challenge" | "level"; ref: string };
@@ -82,7 +84,7 @@ type State = Progress & {
   resetAll: () => void;
   requestLocation: () => void;
 
-  startJourney: (from: string, to: string) => boolean;
+  startJourney: (from: string, to: string, walkTo?: WalkTo) => boolean;
   /** Swap in another route option. Only while the journey is still being planned. */
   choosePlan: (plan: Plan) => void;
   advanceJourney: () => void;
@@ -170,11 +172,11 @@ export const useStore = create<State>()(
         );
       },
 
-      startJourney: (from, to) => {
+      startJourney: (from, to, walkTo) => {
         const plan = planRoute(from, to);
         if (!plan) return false;
         set((s) => ({
-          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now() },
+          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now(), walkTo },
           recents: [to, ...s.recents.filter((id) => id !== to)].slice(0, 6),
         }));
         return true;

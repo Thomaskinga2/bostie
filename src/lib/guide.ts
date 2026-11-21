@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 7;
+export const GUIDE_VERSION = 8;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -41,7 +41,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "tabs", title: "Four places to go", body: "The map, ride planning, things to discover, and your passport of stamps." },
   ],
   ride: [
-    { target: "ride-search", title: "Where to?", body: "Type a station, a line or a landmark and pick from the suggestions. Your starting station is shown underneath; the arrows button changes it." },
+    { target: "ride-search", title: "Where to?", body: "Type a station, an address or any place. Bostie finds the best station for it and plans the ride from your starting station, shown underneath." },
     { target: "ride-shortcuts", title: "Shortcuts", body: "Pick a station on the map, or set home and work once for one-tap trips. Live service alerts are here too." },
     { target: "ride-recents", title: "Recent and popular", body: "Tap a station to plan a ride there. The dots menu sets it as home or work, or saves it." },
     { target: "departures", title: "Next departures", body: "The badge says where the times come from: “Live MBTA”, or “Demo data” when they are simulated." },

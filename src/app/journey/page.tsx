@@ -75,6 +75,18 @@ function RouteSummary({ journey }: { journey: Journey }) {
           )}
         </li>
       ))}
+      {journey.walkTo && (
+        <li className="flex items-start gap-3 rounded-2xl border border-dashed border-line px-4 py-3.5">
+          <Footprints size={20} className="mt-0.5 shrink-0 text-forest" aria-hidden />
+          <span className="min-w-0">
+            <span className="block text-[17px] font-bold leading-snug">Walk to {journey.walkTo.name}</span>
+            <span className="block text-[14px] text-ink-soft">
+              About {journey.walkTo.minutes} min ({formatDistance(journey.walkTo.km)}) from {STATION[plan.to].name}
+              {journey.walkTo.address ? `. ${journey.walkTo.address}` : ""}
+            </span>
+          </span>
+        </li>
+      )}
     </ol>
   );
 }
@@ -172,7 +184,9 @@ export default function JourneyPage() {
       </div>
     );
 
-  const { plan, stage, demo } = journey;
+  const { plan, stage, demo, walkTo } = journey;
+  /** Where the trip ends: the place searched for, or the last station. */
+  const goal = walkTo?.name ?? STATION[plan.to].name;
   const leg = plan.legs[journey.leg];
   const collected = new Set(d.stations.keys());
   const nextStop = leg.stops[journey.stop];
@@ -190,15 +204,15 @@ export default function JourneyPage() {
 
   // One headline, one sentence and one action per stage.
   const view: Record<Stage, { title: string; body: string; action: string }> = {
-    planning: { title: `${STATION[plan.from].name} to ${STATION[plan.to].name}`, body: `About ${plan.minutes} min on the train${plan.legs.length > 1 ? `, ${plan.legs.length - 1} change${plan.legs.length > 2 ? "s" : ""}` : ", no changes"}.`, action: "Start journey" },
+    planning: { title: `${STATION[plan.from].name} to ${goal}`, body: `About ${plan.minutes} min on the train${plan.legs.length > 1 ? `, ${plan.legs.length - 1} change${plan.legs.length > 2 ? "s" : ""}` : ", no changes"}${walkTo ? `, then a ${walkTo.minutes} min walk from ${STATION[plan.to].name}` : ""}.`, action: "Start journey" },
     walking: { title: `Walk to ${STATION[leg.from].name}`, body: walkKm !== null && walkKm > 0.05 ? `About ${walkMinutes(walkKm)} min on foot (${formatDistance(walkKm)}).` : "You are right by the station.", action: "I am at the station" },
     waiting: { title: `Wait for the ${routeLabel(leg.route)}`, body: `Take any train toward ${leg.toward}.`, action: "My train is here" },
     boarding: { title: "Step aboard", body: `Ride ${leg.stops.length - 1} stop${leg.stops.length > 2 ? "s" : ""} to ${STATION[leg.to].name}.`, action: "I am on board" },
     traveling: { title: `Next stop: ${STATION[nextStop]?.name}`, body: `About ${Math.max(1, Math.round(rideMinutes(leg.route, leg.stops[journey.stop - 1], nextStop)))} min. There is no GPS underground, so confirm each stop as the doors open.`, action: `Arrived at ${STATION[nextStop]?.name}` },
     transferring: { title: `Change at ${STATION[leg.to].name}`, body: plan.legs[journey.leg + 1] ? `Follow signs for the ${routeLabel(plan.legs[journey.leg + 1].route)} toward ${plan.legs[journey.leg + 1].toward}.` : "", action: "I am on the next platform" },
-    arriving: { title: `You have arrived at ${STATION[plan.to].name}`, body: "Mind the gap, and take the stairs or lift up to the street.", action: "Explore nearby" },
-    exploring: { title: `Around ${STATION[plan.to].name}`, body: nearby.length ? "History is a short walk away. Scan a landmark to unlock its stamp." : "Have a look around, then wrap up your journey.", action: "Complete journey" },
-    complete: { title: "Journey complete", body: `${STATION[plan.from].name} to ${STATION[plan.to].name}, stamped and logged.`, action: "Open passport" },
+    arriving: { title: `You have arrived at ${STATION[plan.to].name}`, body: walkTo ? `Take the stairs or lift up to the street. ${walkTo.name} is about ${walkTo.minutes} min on foot.` : "Mind the gap, and take the stairs or lift up to the street.", action: "Explore nearby" },
+    exploring: { title: walkTo ? `Walk to ${walkTo.name}` : `Around ${STATION[plan.to].name}`, body: walkTo ? `About ${walkTo.minutes} min (${formatDistance(walkTo.km)}) from the station${walkTo.address ? `, at ${walkTo.address}` : ""}.` : nearby.length ? "History is a short walk away. Scan a landmark to unlock its stamp." : "Have a look around, then wrap up your journey.", action: "Complete journey" },
+    complete: { title: "Journey complete", body: `${STATION[plan.from].name} to ${goal}, stamped and logged.`, action: "Open passport" },
   };
   const v = view[stage];
 

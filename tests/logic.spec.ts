@@ -11,7 +11,7 @@ import { recommend } from "../src/lib/discover";
 import { ACCEPTED, FARE_SOURCES } from "../src/data/fares";
 import { commuterRailFare, formatFare, journeyFare, quoteFare } from "../src/lib/fares";
 import { GUIDE_STEPS, TOUR } from "../src/lib/guide";
-import { planRoute, routeOptions, STATION, STATIONS } from "../src/lib/network";
+import { bestStationFor, planRoute, routeOptions, STATION, STATIONS } from "../src/lib/network";
 import { PLACE } from "../src/lib/places";
 
 const DAY = 86_400_000;
@@ -310,5 +310,28 @@ test.describe("MBTA fares", () => {
       }
     }
     expect(routeOptions("place-harsq", "place-harsq")).toEqual([]);
+  });
+});
+
+test.describe("routing to an address or place", () => {
+  const MFA = { lat: 42.3394573, lng: -71.093897 };
+  test("picks the station with the lowest total of ride plus walk", () => {
+    const best = bestStationFor("place-harsq", MFA)!;
+    expect(best.plan!.from).toBe("place-harsq");
+    expect(best.plan!.legs.at(-1)!.to).toBe(best.station.id);
+    expect(best.walkKm).toBeLessThan(1);
+    expect(best.totalMinutes).toBe(best.plan!.minutes + best.walkMinutes);
+    // No other nearby station gives a quicker door-to-door trip.
+    for (const s of STATIONS) {
+      const km = Math.hypot((s.lat - MFA.lat) * 111, (s.lng - MFA.lng) * 82);
+      const plan = planRoute("place-harsq", s.id);
+      if (km < 1.5 && plan) expect(plan.minutes + Math.round(((km * 1.3) / 4.8) * 60), s.name).toBeGreaterThanOrEqual(best.totalMinutes - 1);
+    }
+  });
+  test("a place beside the starting station needs no train, and a remote one has no route", () => {
+    const nextDoor = bestStationFor("place-pktrm", { lat: STATION["place-pktrm"].lat + 0.0005, lng: STATION["place-pktrm"].lng });
+    expect(nextDoor!.plan).toBeNull();
+    expect(nextDoor!.station.id).toBe("place-pktrm");
+    expect(bestStationFor("place-pktrm", { lat: 42.43, lng: -71.29 })).toBeNull(); // nowhere near a station
   });
 });

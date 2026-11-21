@@ -209,3 +209,28 @@ export function routeOptions(fromId: string, toId: string): RouteOption[] {
   add(planRoute(fromId, toId, { avoidTransfersAt: best.legs.slice(0, -1).map((l) => l.to) }), "Alternative");
   return out;
 }
+
+/** The last step of a trip to somewhere that is not a station. */
+export type WalkTo = { name: string; address: string; lat: number; lng: number; minutes: number; km: number };
+
+/**
+ * Best way to reach an arbitrary point by rapid transit: among the stations near it,
+ * the one with the lowest total of train time from `fromId` plus the walk at the far end.
+ * Returns null when no station is within a sensible walk.
+ */
+export function bestStationFor(fromId: string, point: LatLng, maxWalkKm = 2.5): { station: Station; plan: Plan | null; walkKm: number; walkMinutes: number; totalMinutes: number } | null {
+  const near = STATIONS.map((station) => ({ station, km: distanceKm(point, station) }))
+    .filter((c) => c.km <= maxWalkKm)
+    .sort((a, b) => a.km - b.km)
+    .slice(0, 5);
+  let best: ReturnType<typeof bestStationFor> = null;
+  for (const c of near) {
+    const plan = c.station.id === fromId ? null : planRoute(fromId, c.station.id);
+    if (c.station.id !== fromId && !plan) continue;
+    // Same walking estimate as geo.walkMinutes: 4.8 km/h with a 1.3 detour factor.
+    const walk = Math.max(1, Math.round(((c.km * 1.3) / 4.8) * 60));
+    const total = (plan?.minutes ?? 0) + walk;
+    if (!best || total < best.totalMinutes) best = { station: c.station, plan, walkKm: c.km, walkMinutes: walk, totalMinutes: total };
+  }
+  return best;
+}

@@ -26,7 +26,14 @@ const scanOk = (id = "state-house", name = "Massachusetts State House") => ({
   meta: { ...META, feature: "Landmark recognition", modality: "image + text → JSON" },
 });
 
-type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions" | "alerts", (route: Route) => unknown>>;
+type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions" | "alerts" | "places", (route: Route) => unknown>>;
+
+/** Stand-in location search: knows two real Boston places, nothing else. */
+const PLACE_HITS = [
+  { match: "museum", hit: { id: "o:1", name: "Museum of Fine Arts", address: "465 Huntington Avenue, Boston", lat: 42.3394573, lng: -71.093897 } },
+  { match: "beacon", hit: { id: "o:2", name: "1217 Beacon Street", address: "Brookline", lat: 42.3431444, lng: -71.116364 } },
+  { match: "nowhere", hit: { id: "o:3", name: "Nowhere Farm", address: "Lincoln", lat: 42.43, lng: -71.29 } },
+];
 
 async function mockApis(page: Page, over: Mocks = {}) {
   const json = (body: unknown, status = 200) => (route: Route) => route.fulfill({ status, json: body });
@@ -39,6 +46,10 @@ async function mockApis(page: Page, over: Mocks = {}) {
   await page.route("**/api/mbta/alerts", over.alerts ?? json({
     source: "live", fetchedAt: new Date().toISOString(),
     alerts: [{ id: "a1", header: "Red Line: shuttle buses replace service this weekend.", effect: "SHUTTLE", severity: 7, routes: ["Red"], url: null }],
+  }));
+  await page.route("**/api/places**", over.places ?? ((route) => {
+    const q = (new URL(route.request().url()).searchParams.get("q") ?? "").toLowerCase();
+    return route.fulfill({ json: { provider: "openstreetmap", places: PLACE_HITS.filter((p) => q.includes(p.match)).map((p) => p.hit) } });
   }));
   await page.route("**/api/scan", over.scan ?? json(scanOk()));
   await page.route("**/api/game/guess", over.guess ?? json({
@@ -655,4 +666,56 @@ test("Explore Boston start field: type and pick", async ({ page }) => {
   await expect(page.getByText(/No station matches/)).toBeVisible();
   await from.press("Escape");
   await expect(from).toHaveValue("Fenway");
+});
+
+test("Ride search finds any address or place and plans the best MBTA trip there", async ({ page }) => {
+  let down = false;
+  await mockApis(page, {
+    places: (route) => {
+      if (down) return route.fulfill({ status: 502, json: { error: "places_unavailable" } });
+      const q = (new URL(route.request().url()).searchParams.get("q") ?? "").toLowerCase();
+      return route.fulfill({ json: { provider: "openstreetmap", places: PLACE_HITS.filter((p) => q.includes(p.match)).map((p) => p.hit) } });
+    },
+  });
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  const search = page.getByRole("combobox", { name: "Where to?" });
+  const results = page.getByRole("listbox", { name: "Where to? results" });
+
+  // A place that is not a station: found by the location search, routed by the MBTA planner.
+  await search.fill("museum of fine");
+  const mfa = results.getByRole("button", { name: /Go to Museum of Fine Arts, 465 Huntington Avenue/ });
+  await expect(mfa).toBeVisible();
+  await expect(mfa.getByText(/\d+ min: train to [A-Z].*, then a \d+ min walk/)).toBeVisible(); // door to door, computed from the network
+  await expect(page.getByText("Places from OpenStreetMap.")).toBeVisible();
+  await shot(page, "22-ride-places");
+  await mfa.click();
+
+  // The journey is to the place: train to the best station, then the walk.
+  await expect(page).toHaveURL(/\/journey$/);
+  await expect(page.getByRole("heading", { name: "Harvard to Museum of Fine Arts" })).toBeVisible();
+  await expect(page.getByText(/then a \d+ min walk from/)).toBeVisible();
+  await expect(page.getByText("Walk to Museum of Fine Arts")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Fare" }).getByTestId("fare-total")).toHaveText("$2.40");
+  await shot(page, "22b-journey-to-place");
+  const j = (await store(page)).journey;
+  expect(j.walkTo).toMatchObject({ name: "Museum of Fine Arts" });
+  expect(j.plan.from).toBe("place-harsq");
+  await page.getByRole("button", { name: "End journey" }).click();
+
+  // An address works the same way.
+  await search.fill("1217 beacon");
+  await results.getByRole("button", { name: /Go to 1217 Beacon Street/ }).click();
+  await expect(page.getByRole("heading", { name: "Harvard to 1217 Beacon Street" })).toBeVisible();
+  await page.getByRole("button", { name: "End journey" }).click();
+
+  // Too far from any station: said plainly, not routed.
+  await search.fill("nowhere farm");
+  await expect(results.getByText(/Nothing matches/)).toBeVisible();
+
+  // Search service down: stations and landmarks still work.
+  down = true;
+  await search.fill("park street ch");
+  await expect(results.getByText("Address search is unavailable right now.")).toBeVisible();
+  await expect(results.getByRole("button", { name: "Go to Park Street Church, by Park Street station" })).toBeVisible();
 });

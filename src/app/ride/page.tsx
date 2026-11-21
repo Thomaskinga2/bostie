@@ -12,9 +12,10 @@ import { Arrivals } from "@/components/Arrivals";
 import { Sheet } from "@/components/Sheet";
 import { suggestStations } from "@/components/StationSelect";
 import { Button, cx, LinePill, StationSign } from "@/components/ui";
-import { useAlerts } from "@/lib/api";
+import { useAlerts, usePlaceSearch } from "@/lib/api";
+import type { PlaceHit } from "@/lib/contracts";
 import { formatDistance, walkMinutes } from "@/lib/geo";
-import { LINES, nearestStation, routeLabel, STATION, type Station } from "@/lib/network";
+import { bestStationFor, LINES, nearestStation, routeLabel, STATION, type Station } from "@/lib/network";
 import { LANDMARKS, stationFor, type Place } from "@/lib/places";
 import { DEMO_ROUTE, useStore, useWhere } from "@/lib/store";
 
@@ -93,6 +94,9 @@ export default function RidePage() {
   const searching = mode !== "to" || text.trim() !== "";
   const stations = searching ? suggestStations(text) : [];
   const places = mode === "to" ? suggestPlaces(text) : [];
+  // Anywhere else: addresses and places from the location search.
+  const search = usePlaceSearch(text, mode === "to");
+  const routed = search.places.map((hit) => ({ hit, best: bestStationFor(from, hit) })).filter((r) => r.best);
   const inProgress = journey && journey.stage !== "complete";
   const stationId = near?.station.id ?? from;
 
@@ -107,6 +111,17 @@ export default function RidePage() {
     if (toId === from) return setNote(`You are already at ${STATION[toId].name}. Change your starting station with the arrows button.`);
     if (!startJourney(from, toId)) return setNote("No rail route found to that station.");
     router.push("/journey");
+  };
+
+  /** An address or place was picked: ride to the best station for it, then walk. */
+  const goPlace = (hit: PlaceHit) => {
+    setNote("");
+    if (inProgress) return router.push("/journey");
+    const best = bestStationFor(from, hit);
+    if (!best) return setNote(`${hit.name} is not within walking distance of a subway station.`);
+    if (!best.plan) return setNote(`${hit.name} is a ${best.walkMinutes} min walk from ${STATION[from].name}. No train needed.`);
+    const walkTo = { name: hit.name, address: hit.address, lat: hit.lat, lng: hit.lng, minutes: best.walkMinutes, km: best.walkKm };
+    if (startJourney(from, best.station.id, walkTo)) router.push("/journey");
   };
 
   /** A station was picked from the results: what that means depends on what the field is choosing. */
@@ -143,9 +158,10 @@ export default function RidePage() {
                 if (e.key === "Enter" && searching) {
                   const first = stations[0]?.id ?? (places[0] ? stationFor(places[0]).id : null);
                   if (first) pick(first);
+                  else if (routed[0]) goPlace(routed[0].hit);
                 } else if (e.key === "Escape") reset();
               }}
-              placeholder={mode === "to" ? "Station, line or landmark" : "Type a station"}
+              placeholder={mode === "to" ? "Station, address or place" : "Type a station"}
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
@@ -216,10 +232,37 @@ export default function RidePage() {
                 </li>
               );
             })}
-            {!stations.length && !places.length && (
-              <li role="presentation" className="px-4 py-4 text-[14.5px] text-ink-soft">Nothing matches “{text.trim()}”. Try the first few letters of a station.</li>
+            {routed.map(({ hit, best }) => (
+              <li key={hit.id} role="option" aria-selected={false}>
+                <button onClick={() => goPlace(hit)} aria-label={`Go to ${hit.name}${hit.address ? `, ${hit.address}` : ""}`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                  <MapPin size={22} className="shrink-0 text-ink-soft" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[16.5px] font-bold">{hit.name}</span>
+                    {hit.address && <span className="block truncate text-[13.5px] text-ink-soft">{hit.address}</span>}
+                    <span className="block truncate text-[13.5px] font-semibold text-forest">
+                      {best!.plan ? `${best!.totalMinutes} min: train to ${best!.station.name}, then a ${best!.walkMinutes} min walk` : `${best!.walkMinutes} min walk from ${best!.station.name}`}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {mode === "to" && search.state === "loading" && (
+              <li role="presentation" className="px-4 py-3.5 text-[14px] text-ink-soft">Searching addresses and places…</li>
+            )}
+            {mode === "to" && search.state === "unavailable" && (
+              <li role="presentation" className="px-4 py-3.5 text-[14px] text-ink-soft">Address search is unavailable right now. Station and landmark names still work.</li>
+            )}
+            {!stations.length && !places.length && !routed.length && search.state !== "loading" && search.state !== "unavailable" && (
+              <li role="presentation" className="px-4 py-4 text-[14.5px] text-ink-soft">
+                Nothing matches “{text.trim()}”{mode === "to" && text.trim().length < 3 ? ". Keep typing to search addresses and places." : ". Try a station, an address or a place name."}
+              </li>
             )}
           </ul>
+          {mode === "to" && search.provider && routed.length > 0 && (
+            <p className="mt-2 px-1 text-[12px] text-ink-faint">
+              {search.provider === "google" ? "Places by Google." : "Places from OpenStreetMap."} Routes by Bostie from the MBTA network.
+            </p>
+          )}
         </section>
       ) : (
         <>
