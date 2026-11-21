@@ -8,6 +8,7 @@ import {
   applyEvent, diffRewards, emptyProgress, settle, type GameEvent, type JourneyEvent, type Progress,
 } from "./gamification";
 import type { LatLng } from "./geo";
+import { GUIDE_VERSION } from "./guide";
 import { planRoute, STATION, type Plan } from "./network";
 
 export type Stage =
@@ -52,6 +53,9 @@ type State = Progress & {
   celebrations: Celebration[];
   ai: AiEvent[];
   showcase: boolean;
+  /** On-screen tips: scene -> guide version whose highlights this visitor has already seen. */
+  tipsSeen: Record<string, number>;
+  tipsOff: boolean;
 
   /** Records an event through the idempotent reward engine and queues reveals. */
   reward: (e: GameEvent) => void;
@@ -60,6 +64,10 @@ type State = Progress & {
   dismissCelebration: () => void;
   logAi: (meta: AiMeta | null | undefined, output: unknown, action: string) => void;
   setShowcase: (open: boolean) => void;
+  markTips: (scene: string) => void;
+  skipTips: () => void;
+  /** Shows the highlights for one scene again (and turns tips back on). */
+  replayTips: (scene: string | null) => void;
   setName: (name: string) => void;
   onboard: (demo: boolean) => void;
   setDemo: (demo: boolean) => void;
@@ -67,6 +75,8 @@ type State = Progress & {
   requestLocation: () => void;
 
   startJourney: (from: string, to: string) => boolean;
+  /** Swap in another route option. Only while the journey is still being planned. */
+  choosePlan: (plan: Plan) => void;
   advanceJourney: () => void;
   endJourney: () => void;
 };
@@ -92,6 +102,8 @@ export const useStore = create<State>()(
       celebrations: [],
       ai: [],
       showcase: false,
+      tipsSeen: {},
+      tipsOff: false,
 
       reward: (e) => {
         const s = get();
@@ -123,11 +135,16 @@ export const useStore = create<State>()(
         set((s) => ({ ai: [{ id: uid(), at: Date.now(), meta, output, action }, ...s.ai].slice(0, 30) }));
       },
       setShowcase: (showcase) => set({ showcase }),
+      markTips: (scene) => set((s) => ({ tipsSeen: { ...s.tipsSeen, [scene]: GUIDE_VERSION } })),
+      skipTips: () => set({ tipsOff: true }),
+      replayTips: (scene) =>
+        set((s) => ({ tipsOff: false, tipsSeen: Object.fromEntries(Object.entries(s.tipsSeen).filter(([k]) => k !== scene)) })),
       setName: (name) => set({ name: name.trim().slice(0, 24) || "Explorer" }),
       onboard: (demo) => set({ onboarded: true, demo }),
       setDemo: (demo) => set({ demo }),
       resetAll: () =>
-        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo })),
+        // Tips come back too, so the next judge gets the full guided first run.
+        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo, tipsSeen: {}, tipsOff: false })),
 
       requestLocation: () => {
         if (typeof navigator === "undefined" || !navigator.geolocation) return set({ geoStatus: "unavailable" });
@@ -144,6 +161,11 @@ export const useStore = create<State>()(
         if (!plan) return false;
         set({ journey: { id: uid(), plan, demo: get().demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now() } });
         return true;
+      },
+
+      choosePlan: (plan) => {
+        const j = get().journey;
+        if (j?.stage === "planning" && plan.from === j.plan.from && plan.to === j.plan.to) set({ journey: { ...j, plan } });
       },
 
       advanceJourney: () => {
@@ -183,7 +205,7 @@ export const useStore = create<State>()(
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({
         events: s.events, xp: s.xp, achievements: s.achievements, challenges: s.challenges, name: s.name,
-        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai,
+        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff,
       }),
     },
   ),

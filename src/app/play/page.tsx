@@ -159,7 +159,7 @@ export default function PlayPage() {
       completed: CHALLENGES.filter((c) => challenges[c.id]?.completedAt),
     };
     return (
-      <div ref={scroller} className="scroll-area h-full pb-8">
+      <div ref={scroller} data-scene="play-lobby" className="scroll-area h-full pb-8">
         <PageHeader title="Guess Boston" sub="One photo. Where in the city is it?" />
         <div className="px-5">
           <div className="relative overflow-hidden rounded-3xl bg-ink text-paper">
@@ -175,7 +175,7 @@ export default function PlayPage() {
           </div>
 
           <h2 className="mt-6 text-[22px] font-bold">Pick a game</h2>
-          <div role="radiogroup" aria-label="Game mode" className="mt-2 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-card">
+          <div data-tour="game-modes" role="radiogroup" aria-label="Game mode" className="mt-2 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-card">
             {MODES.map((m) => (
               <button key={m.id} role="radio" aria-checked={mode === m.id} onClick={() => setMode(m.id)} className="flex w-full items-center gap-3.5 px-4 py-3 text-left">
                 <span className={cx("grid size-6 shrink-0 place-items-center rounded-full border-2", mode === m.id ? "border-forest bg-forest text-paper" : "border-line")}>
@@ -189,14 +189,14 @@ export default function PlayPage() {
             ))}
           </div>
 
-          <Button size="lg" className="mt-4 w-full" onClick={() => begin(mode)}>Start round</Button>
+          <Button size="lg" className="mt-4 w-full" onClick={() => begin(mode)} data-tour="start-round">Start round</Button>
           <p className="mt-2.5 text-center text-[13px] text-ink-soft">
             Difficulty: <strong>{TIER_NAME[tier]}</strong>, set by your last four rounds. Up to 1,200 points and {xpFor(1200)} XP a round.
           </p>
           <div className="mt-3 flex justify-center"><GeminiChip /></div>
 
           <h2 id="challenges" className="mt-8 scroll-mt-4 text-[22px] font-bold">Challenges</h2>
-          <div role="tablist" className="mt-2 flex rounded-full bg-sand p-1">
+          <div data-tour="challenges" role="tablist" className="mt-2 flex rounded-full bg-sand p-1">
             {(["available", "active", "completed"] as const).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cx("h-9 flex-1 rounded-full text-[14px] font-semibold capitalize", tab === t ? "bg-card text-ink shadow-card" : "text-ink-soft")}>
                 {t} ({lists[t].length})
@@ -250,7 +250,7 @@ export default function PlayPage() {
     const { correct, score, km, pin: pinned } = round.result;
     const db = round.debrief;
     return (
-      <div ref={scroller} className="scroll-area h-full pb-8">
+      <div ref={scroller} data-scene="play-result" className="scroll-area h-full pb-8">
         <Photo id={place.id} className="h-[210px]" alt={place.name} />
         <div className="px-5 pt-4">
           <p className={cx("text-[14px] font-semibold", correct ? "text-forest" : "text-ink-soft")}>
@@ -259,7 +259,7 @@ export default function PlayPage() {
           <h1 className="text-[30px] font-bold leading-[1.08]">{place.name}</h1>
           <p className="mt-0.5 text-[14.5px] text-ink-soft">{place.neighborhood}{place.year ? `, ${place.year}` : ""}</p>
 
-          <dl className="mt-4 flex items-end gap-6 border-y border-line py-3.5">
+          <dl data-tour="round-score" className="mt-4 flex items-end gap-6 border-y border-line py-3.5">
             <div>
               <dd className="font-display text-[40px] font-bold leading-none text-forest">{score}</dd>
               <dt className="mt-1 text-[12.5px] text-ink-soft">points</dt>
@@ -279,7 +279,7 @@ export default function PlayPage() {
             </div>
           )}
 
-          <section className="mt-5" aria-live="polite">
+          <section data-tour="round-debrief" className="mt-5" aria-live="polite">
             {db === undefined ? (
               <div className="space-y-2.5" aria-busy>
                 <p className="flex items-center gap-2 text-[14px] font-semibold text-ink-soft"><Sparkles size={15} aria-hidden /> Gemini is writing your debrief…</p>
@@ -305,7 +305,7 @@ export default function PlayPage() {
             )}
           </section>
 
-          <div className="mt-6 space-y-2">
+          <div data-tour="next-round" className="mt-6 space-y-2">
             {db?.next.chosenBy === "gemini" && (
               <p className="flex items-start gap-2 text-[13.5px] leading-snug text-ink-soft">
                 <Sparkles size={15} className="mt-0.5 shrink-0 text-gold" aria-hidden />
@@ -329,9 +329,9 @@ export default function PlayPage() {
 
   // ---- playing --------------------------------------------------------------
   return (
-    <div className="flex h-full flex-col">
+    <div data-scene="play-round" className="flex h-full flex-col">
       <div ref={scroller} className="scroll-area min-h-0 flex-1">
-        <div className="relative">
+        <div data-tour="round-photo" className="relative">
           <Photo id={place.id} credit={false} className="h-[250px]" alt="Mystery location" />
           <button onClick={() => setRound(null)} className="absolute left-3 top-3 flex h-9 items-center gap-0.5 rounded-full bg-ink/70 pl-2 pr-3.5 text-[13.5px] font-semibold text-paper">
             <ChevronLeft size={17} aria-hidden /> Quit
@@ -388,7 +388,7 @@ export default function PlayPage() {
       <div className="shrink-0 border-t border-line bg-card px-4 pb-3 pt-3">
         {notice && <p role="alert" className="mb-2 text-[13.5px] font-semibold text-t-red">{notice}</p>}
         {input === "text" ? (
-          <form onSubmit={(e) => (e.preventDefault(), submitGuess())} className="flex items-center gap-2">
+          <form data-tour="guess-input" onSubmit={(e) => (e.preventDefault(), submitGuess())} className="flex items-center gap-2">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -408,7 +408,7 @@ export default function PlayPage() {
             {pin ? "Lock in this pin" : "Tap the map first"}
           </Button>
         )}
-        <div className="mt-2 flex items-center justify-between text-[13.5px] font-semibold">
+        <div data-tour="round-tools" className="mt-2 flex items-center justify-between text-[13.5px] font-semibold">
           <button onClick={askHint} disabled={!!busy || round.hints.length >= MAX_HINTS} className="flex h-9 items-center gap-1.5 text-forest disabled:text-ink-faint">
             <Lightbulb size={16} aria-hidden />
             {busy === "hint" ? "Thinking…" : round.hints.length >= MAX_HINTS ? "No hints left" : `Hint (${MAX_HINTS - round.hints.length} left)`}

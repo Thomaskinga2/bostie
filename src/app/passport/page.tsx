@@ -14,7 +14,7 @@ export default function PassportPage() {
   const streak = useMemo(() => streakFor(events, now).current, [events, now]);
 
   return (
-    <div className="scroll-area h-full">
+    <div data-scene="passport" className="scroll-area h-full">
       <Cover now={now} />
       <Stats d={d} />
       <Stamps d={d} />

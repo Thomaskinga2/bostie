@@ -1,21 +1,32 @@
 "use client";
-// Built-in schematic map: used when no Google Maps key is configured or Google fails.
-// Everything is drawn in screen pixels from a {centre, scale} view, so markers and
-// labels keep a constant size while the geography pans and zooms underneath them.
+// Built-in map: used when no Google Maps key is configured or Google fails.
+// A street basemap (OpenStreetMap tiles, no key needed) sits underneath, slightly muted;
+// lines, stations and landmarks are drawn on top in screen pixels from a {centre, scale}
+// view, so markers and labels keep a constant size while the map pans and zooms.
+// If the tiles cannot load, it degrades to a rough schematic and says so.
 import { Minus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { BOSTON, type LatLng } from "@/lib/geo";
 import { STATION } from "@/lib/network";
 import { BOOKMARK_PATH, CARD, FOREST, GOLD, GOLD_SOFT, INK, PIN_PATH, USER_BLUE, type CityMapProps, type MapMarker } from "./shared";
 
-// Equirectangular projection around Boston, in kilometres. Accurate to a few metres at city scale.
+// Web Mercator around Boston, in kilometres on the ground at Boston's latitude.
+// It is the projection the basemap tiles use, so overlays line up with the streets exactly.
 const RAD = Math.PI / 180;
-const KX = 111.32 * Math.cos(BOSTON.lat * RAD);
-const KY = 110.57;
-const toWorld = (p: LatLng) => ({ x: (p.lng - BOSTON.lng) * KX, y: (BOSTON.lat - p.lat) * KY });
-const toLatLng = (x: number, y: number): LatLng => ({ lat: BOSTON.lat - y / KY, lng: BOSTON.lng + x / KX });
+const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * RAD) / 2));
+const K = 6378.137 * Math.cos(BOSTON.lat * RAD);
+const M0 = merc(BOSTON.lat);
+const toWorld = (p: LatLng) => ({ x: (p.lng - BOSTON.lng) * RAD * K, y: (M0 - merc(p.lat)) * K });
+const toLatLng = (x: number, y: number): LatLng => ({ lat: (2 * Math.atan(Math.exp(M0 - y / K)) - Math.PI / 2) / RAD, lng: BOSTON.lng + x / (RAD * K) });
+/** Metres per pixel at zoom 0 on the equator: the constant behind every slippy map. */
+const EQUATOR_M_PER_PX = 156543.03392;
 /** Pixels per km at a Google-style zoom level, so `zoom` means the same on both backends. */
-const zoomToScale = (z: number) => (1000 * 2 ** z) / (156543.03392 * Math.cos(BOSTON.lat * RAD));
+const zoomToScale = (z: number) => (1000 * 2 ** z) / (EQUATOR_M_PER_PX * Math.cos(BOSTON.lat * RAD));
+const scaleToZoom = (s: number) => Math.log2((s * EQUATOR_M_PER_PX * Math.cos(BOSTON.lat * RAD)) / 1000);
+const TILE = 256;
+// ponytail: OpenStreetMap's community tile server. Fine for a demo with attribution; it has
+// a fair-use policy, so move to a keyed provider (or Google Maps) before real traffic.
+const tileUrl = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 const MIN_S = zoomToScale(10.3); // the whole rapid-transit network fits a phone
 const MAX_S = zoomToScale(17.2);
 const clampS = (s: number) => Math.min(MAX_S, Math.max(MIN_S, s));
@@ -35,7 +46,7 @@ function viewFor([fit, center, zoom]: Goal, w: number, h: number): View {
   return { ...toWorld(center ?? BOSTON), s: clampS(zoomToScale(zoom ?? 13.4)) };
 }
 
-// Hand-traced hints, deliberately rough: this backend is labelled "Schematic map".
+// Hand-traced hints, deliberately rough: only drawn if the basemap tiles fail, under a "Schematic map" label.
 // [centreline as lat,lng pairs, width in km]
 const WATER: [[number, number][], number][] = [
   [[[42.3712, -71.133], [42.369, -71.1245], [42.364, -71.117], [42.36, -71.115], [42.353, -71.1107]], 0.11],
@@ -51,30 +62,29 @@ const PARKS: [number, number][][] = [
 const ORDER: Record<MapMarker["kind"], number> = { station: 0, landmark: 1, saved: 2, answer: 3, pin: 4, user: 5 };
 const isHub = (m: MapMarker) => m.kind === "station" && (STATION[m.id]?.lines.length ?? 1) > 1;
 /** Rough marker radius in px, for label offsets. */
-const radiusOf = (m: MapMarker, k: number) => (m.kind === "station" ? (isHub(m) ? 6.5 : 4.5) * k : m.kind === "pin" ? 10 : 9 * k);
+const radiusOf = (m: MapMarker, k: number) => (m.kind === "station" ? (isHub(m) ? 6.5 : 4.8) * k : m.kind === "pin" ? 10 : 9 * k);
 
-function Glyph({ m, k }: { m: MapMarker; k: number }) {
+function Glyph({ m, k, far }: { m: MapMarker; k: number; far: boolean }) {
   switch (m.kind) {
     case "station": {
       const hub = isHub(m);
-      return (
-        <circle
-          r={(hub ? 6.5 : 4.5) * k}
-          fill={m.done ? GOLD : CARD}
-          stroke={m.done || hub ? INK : (m.color ?? INK)}
-          strokeWidth={m.done ? 1.6 : hub ? 3 : 2.2}
-        />
+      // Zoomed right out, ordinary stops become ticks on their line so the network stays readable.
+      if (far && !hub) return <circle r="2.1" fill={m.done ? GOLD : CARD} stroke={m.color ?? INK} strokeWidth="1.2" />;
+      return hub ? (
+        <circle r={6.5 * k} fill={m.done ? GOLD : CARD} stroke={INK} strokeWidth={3 * k} />
+      ) : (
+        <circle r={4.8 * k} fill={m.done ? GOLD : (m.color ?? INK)} stroke={CARD} strokeWidth="2" />
       );
     }
     case "landmark":
-      // Landmarks are the collectibles: never let them shrink into specks when zoomed out.
+      // Destinations are the bright markers: gold until verified, green with a tick after.
       return (
-        <g transform={`scale(${Math.max(0.95, k)})`}>
-          <rect x="-6.5" y="-6.5" width="13" height="13" rx="3" transform="rotate(45)" fill={m.done ? GOLD : FOREST} stroke={CARD} strokeWidth="2" />
+        <g transform={`scale(${far ? 0.6 : Math.max(0.85, k)})`}>
+          <rect x="-7" y="-7" width="14" height="14" rx="3.5" transform="rotate(45)" fill={m.done ? FOREST : "#e2a11b"} stroke={CARD} strokeWidth="2.4" />
           {m.done ? (
             <path d="M-3.4,0.2l2.3,2.4l4.4,-4.9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           ) : (
-            <circle r="2.3" fill={GOLD} />
+            <circle r="2.4" fill={FOREST} />
           )}
         </g>
       );
@@ -114,6 +124,7 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
   const raf = useRef(0);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const tap = useRef({ x: 0, y: 0, moved: true });
+  const [tilesOk, setTilesOk] = useState(true);
 
   const apply = useCallback((v: View) => {
     live.current = v;
@@ -237,6 +248,7 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
     const path = (pts: LatLng[]) => pts.map((p, i) => `${i ? "L" : "M"}${sx(toWorld(p).x).toFixed(1)},${sy(toWorld(p).y).toFixed(1)}`).join("");
     const pair = ([lat, lng]: [number, number]) => ({ lat, lng });
     const k = Math.min(1.15, Math.max(0.62, s / 120)); // markers shrink a little when zoomed out
+    const far = s < zoomToScale(12.4); // whole-network view: declutter
     const lineW = Math.min(6, Math.max(2.6, s / 38));
 
     const visible = markers
@@ -247,7 +259,7 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
     // Labels appear as you zoom in; overlapping ones are dropped, most important first.
     const wantsLabel = (m: MapMarker) =>
       m.id === selectedId || m.kind === "pin" || m.kind === "answer" ||
-      (m.kind === "user" ? s > 50 : m.kind === "station" ? s > (isHub(m) ? 95 : 190) : s > 120);
+      (m.kind === "user" ? s > 50 : m.kind === "station" ? s > (isHub(m) ? 95 : 190) : s > 105);
     const rank = (m: MapMarker) => (m.id === selectedId ? -1 : m.kind === "station" ? (isHub(m) ? 6 : 7) : 5 - ORDER[m.kind]);
     const placed: { x: number; y: number; w: number; text: string; end: boolean; bold: boolean }[] = [];
     const clear = (x: number, y: number, bw: number) => placed.every((b) => x > b.x + b.w + 3 || x + bw + 3 < b.x || Math.abs(y - b.y) > 14);
@@ -262,16 +274,17 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
     const sorted = [...lines].sort((a, b) => +!!a.emphasis - +!!b.emphasis);
     return (
       <>
-        {WATER.map(([pts, km], i) => (
+        {!tilesOk && WATER.map(([pts, km], i) => (
           <path key={i} d={path(pts.map(pair))} fill="none" stroke="#cddde0" strokeWidth={Math.max(2, km * s)} strokeLinecap="round" strokeLinejoin="round" />
         ))}
-        {PARKS.map((pts, i) => (
+        {!tilesOk && PARKS.map((pts, i) => (
           <path key={i} d={path(pts.map(pair)) + "Z"} fill="#d6e4c9" />
         ))}
         {sorted.map((l) => (
           <g key={l.id} fill="none" strokeLinecap="round" strokeLinejoin="round">
-            {l.emphasis && <path d={path(l.path)} stroke={CARD} strokeWidth={lineW + 6} />}
-            <path d={path(l.path)} stroke={l.color} strokeWidth={l.emphasis ? lineW + 2 : lineW} strokeDasharray={l.dashed ? `1 ${lineW + 6}` : undefined} opacity={l.emphasis ? 1 : 0.9} />
+            {/* a pale casing keeps every line legible over streets and water */}
+            <path d={path(l.path)} stroke={CARD} strokeWidth={l.emphasis ? lineW + 6 : lineW + 2.5} opacity={l.emphasis ? 1 : 0.85} />
+            <path d={path(l.path)} stroke={l.color} strokeWidth={l.emphasis ? lineW + 2 : lineW} strokeDasharray={l.dashed ? `1 ${lineW + 6}` : undefined} />
           </g>
         ))}
         {visible.map(({ m, x, y }) => (
@@ -290,10 +303,10 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
               : { "aria-hidden": true })}
           >
             {m.id === selectedId && <circle cy={m.kind === "pin" ? -21 : 0} r={radiusOf(m, k) + 6} fill="none" stroke={GOLD} strokeWidth="2.5" />}
-            <Glyph m={m} k={k} />
+            <Glyph m={m} k={k} far={far} />
           </g>
         ))}
-        <g aria-hidden fontSize="11.5" fontFamily="var(--font-sans)" fill={INK} stroke="#f5efe0" strokeWidth="3.2" strokeLinejoin="round" paintOrder="stroke" className="pointer-events-none">
+        <g aria-hidden fontSize="11.5" fontFamily="var(--font-sans)" fill={INK} stroke="#fffcf4" strokeWidth="3.6" strokeLinejoin="round" paintOrder="stroke" className="pointer-events-none">
           {placed.map((b) => (
             <text key={b.text + b.x} x={b.end ? b.x + b.w : b.x} y={b.y + 4} textAnchor={b.end ? "end" : "start"} fontWeight={b.bold ? 700 : 600}>
               {b.text}
@@ -304,15 +317,45 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
     );
   })();
 
+  // Basemap: the slippy-map tiles covering the view, at the nearest whole zoom level.
+  const tiles = (() => {
+    if (!view || !laidOut || !tilesOk) return null;
+    const zf = scaleToZoom(view.s);
+    const z = Math.min(18, Math.max(10, Math.ceil(zf - 0.25))); // lean towards the sharper level on retina screens
+    const f = 2 ** (zf - z) * TILE; // on-screen size of one tile
+    const n = 2 ** z;
+    const c = toLatLng(view.x, view.y);
+    const gx = ((c.lng + 180) / 360) * n;
+    const gy = ((1 - merc(c.lat) / Math.PI) / 2) * n;
+    const out = [];
+    for (let tx = Math.floor(gx - w / 2 / f); tx <= Math.floor(gx + w / 2 / f); tx++)
+      for (let ty = Math.floor(gy - h / 2 / f); ty <= Math.floor(gy + h / 2 / f); ty++)
+        out.push(
+          // eslint-disable-next-line @next/next/no-img-element -- map tiles, positioned by hand
+          <img
+            key={`${z}/${tx}/${ty}`}
+            src={tileUrl(z, tx, ty)}
+            alt=""
+            draggable={false}
+            onError={() => setTilesOk(false)}
+            className="pointer-events-none absolute max-w-none select-none"
+            style={{ left: w / 2 + (tx - gx) * f, top: h / 2 + (ty - gy) * f, width: f + 0.5, height: f + 0.5 }}
+          />,
+        );
+    return out;
+  })();
+
   const zoomBtn = "grid size-10 place-items-center text-ink active:bg-sand";
   return (
-    <div ref={box} className={`relative overflow-hidden bg-paper ${className ?? ""}`}>
+    <div ref={box} className={`relative overflow-hidden bg-[#f1ede4] ${className ?? ""}`}>
+      {/* muted so the lines and markers on top stay the clearest thing on the map */}
+      <div aria-hidden className="absolute inset-0 [filter:saturate(0.55)_brightness(1.03)]">{tiles}</div>
       <svg
         width={w}
         height={h}
         role="group"
         aria-label="Map of Boston and the MBTA network"
-        className="block cursor-grab touch-none select-none active:cursor-grabbing"
+        className="relative block cursor-grab touch-none select-none active:cursor-grabbing"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -329,7 +372,13 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
           <Minus size={18} aria-hidden />
         </button>
       </div>
-      <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-card/85 px-2 py-1 text-[10.5px] leading-none text-ink-faint">Schematic map</span>
+      {tilesOk ? (
+        <span className="absolute bottom-1 left-1 rounded bg-card/80 px-1.5 py-0.5 text-[9.5px] leading-none text-ink-soft">
+          © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a> contributors
+        </span>
+      ) : (
+        <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-card/85 px-2 py-1 text-[10.5px] leading-none text-ink-faint">Schematic map</span>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useDemoSteps } from "@/lib/demo";
 import { useStore } from "@/lib/store";
 import { cx } from "../ui";
+import { GuideButton } from "./Tour";
 
 /** Desktop side panel: the whole judge walkthrough as a checklist. */
 export function DemoChecklist() {
@@ -45,18 +46,19 @@ export function DemoStrip() {
   const n = current ? steps.indexOf(current) + 1 : steps.length;
   const here = current && current.href === pathname;
   return (
-    <div className="relative z-20 shrink-0 border-b border-gold/40 bg-gold-soft px-4 py-2 text-[#5b410b]">
+    <div data-tour="demo-strip" className="relative z-20 flex shrink-0 items-center gap-2 border-b border-gold/40 bg-gold-soft py-1 pl-4 pr-2 text-[#5b410b]">
       {current ? (
-        <Link href={current.href} className="flex items-center gap-2.5">
+        <Link href={current.href} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 py-0.5">
           <span className="shrink-0 rounded-full bg-[#5b410b] px-2 py-0.5 text-[11px] font-bold text-gold-soft">
             Demo {n}/{steps.length}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{here ? current.detail : current.title}</span>
+          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] font-semibold leading-tight">{here ? current.detail : current.title}</span>
           {!here && <ChevronRight size={16} className="shrink-0" aria-hidden />}
         </Link>
       ) : (
-        <p className="text-center text-[13.5px] font-semibold">Demo complete. Reset it from Passport to run it again.</p>
+        <p className="min-w-0 flex-1 py-1 text-[13px] font-semibold leading-tight">Demo complete. Reset it in Passport to run it again.</p>
       )}
+      <GuideButton className="h-9 shrink-0 rounded-full border border-[#5b410b]/30 px-2.5 text-[12.5px]" />
     </div>
   );
 }

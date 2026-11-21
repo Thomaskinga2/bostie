@@ -1,18 +1,22 @@
 "use client";
-import { Camera, Check, ChevronLeft, Footprints, Gamepad2, ShieldCheck } from "lucide-react";
+import { Camera, Check, ChevronLeft, CreditCard, Footprints, Gamepad2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
-import { Arrivals } from "@/components/Arrivals";
-import { Button, cx, Empty, LinePill, SourceBadge, StationSign } from "@/components/ui";
+import { useMemo, useState } from "react";
+import { Arrivals, useNextDeparture } from "@/components/Arrivals";
+import { FareSummary } from "@/components/FareSummary";
+import { Button, cx, Empty, LineDots, LinePill, SourceBadge, StationSign } from "@/components/ui";
 import { derive, STAMP } from "@/lib/gamification";
+import { formatFare, journeyFare } from "@/lib/fares";
 import { distanceKm, formatDistance, walkMinutes } from "@/lib/geo";
-import { legDirection, LINES, rideMinutes, routeLabel, STATION, type Leg } from "@/lib/network";
+import { legDirection, LINES, rideMinutes, routeLabel, routeOptions, STATION, type Leg, type Plan, type RouteOption } from "@/lib/network";
 import { landmarksNearStation } from "@/lib/places";
 import { useStore, useWhere, type Journey, type Stage } from "@/lib/store";
 import { StampArt } from "@/components/Stamp";
 
 const STEP_NAMES = ["Plan", "Walk", "Wait", "Board", "Ride", "Arrive", "Explore", "Done"];
+/** Scenes that have on-screen tips (lib/guide.ts). */
+const SCENE: Partial<Record<Stage, string>> = { planning: "journey-plan", waiting: "journey-wait", traveling: "journey-ride", exploring: "journey-explore" };
 const stepIndex = (s: Stage) => ({ planning: 0, walking: 1, waiting: 2, boarding: 3, traveling: 4, transferring: 4, arriving: 5, exploring: 6, complete: 7 })[s];
 
 /** MBTA-style strip map of one leg. `at` = index of the station the rider has reached. */
@@ -51,7 +55,7 @@ function StripMap({ leg, at, next, collected }: { leg: Leg; at: number; next: nu
 function RouteSummary({ journey }: { journey: Journey }) {
   const { plan } = journey;
   return (
-    <ol className="space-y-3">
+    <ol data-tour="route-summary" className="space-y-3">
       {plan.legs.map((leg, i) => (
         <li key={i} className="rounded-2xl border border-line bg-card p-4">
           <div className="flex items-center gap-2">
@@ -75,6 +79,78 @@ function RouteSummary({ journey }: { journey: Journey }) {
   );
 }
 
+const sameRoute = (a: Plan, b: Plan) => a.legs.length === b.legs.length && a.legs.every((l, i) => l.line === b.legs[i].line && l.from === b.legs[i].from && l.to === b.legs[i].to);
+
+/** One way to make the trip: time, changes, fare and the next train, at a glance. */
+function RouteCard({ option, selected, demo, onChoose }: { option: RouteOption; selected: boolean; demo: boolean; onChoose?: () => void }) {
+  const { plan, tag } = option;
+  const first = plan.legs[0];
+  const next = useNextDeparture(first.from, { route: first.route, direction: legDirection(first.route, first.from, first.to) }, demo);
+  const changes = plan.legs.length - 1;
+  const body = (
+    <>
+      <span className="flex items-center justify-between gap-3">
+        <span className={cx("rounded-full px-2.5 py-1 text-[12px] font-bold leading-none", selected ? "bg-forest text-paper" : "bg-sand text-ink-soft")}>{tag}</span>
+        <span className="font-display text-[22px] font-bold leading-none text-forest">{formatFare(journeyFare(plan).totalCents)}</span>
+      </span>
+      <span className="mt-2 flex items-baseline gap-3">
+        <span className="text-[22px] font-bold leading-none">{plan.minutes} min</span>
+        <span className="text-[14px] text-ink-soft">{changes ? `${changes} change${changes > 1 ? "s" : ""}` : "No changes"}</span>
+      </span>
+      <span className="mt-2 flex items-center gap-2 text-[13.5px] text-ink-soft">
+        <LineDots lines={[...new Set(plan.legs.map((l) => l.line))]} size={11} />
+        {next ? (
+          <span>
+            Next train {next.minutes <= 0 ? "now" : `in ${next.minutes} min`} ({next.kind === "live" ? "live" : "demo data"})
+          </span>
+        ) : (
+          <span>Next train time unavailable</span>
+        )}
+      </span>
+    </>
+  );
+  const box = cx("block w-full rounded-2xl border bg-card p-3.5 text-left", selected ? "border-forest shadow-card ring-1 ring-forest" : "border-line");
+  return onChoose ? (
+    <button role="radio" aria-checked={selected} onClick={onChoose} className={box}>{body}</button>
+  ) : (
+    <div className={box}>{body}</div>
+  );
+}
+
+/** The route comparison: every sensible way to make the trip, sortable by time or cost. */
+function RouteOptions({ plan, demo }: { plan: Plan; demo: boolean }) {
+  const choosePlan = useStore((s) => s.choosePlan);
+  const [sort, setSort] = useState<"time" | "cost">("time");
+  const options = useMemo(() => routeOptions(plan.from, plan.to), [plan.from, plan.to]);
+  const cost = (o: RouteOption) => journeyFare(o.plan).totalCents ?? Infinity;
+  const sorted = [...options].sort((a, b) => (sort === "cost" ? cost(a) - cost(b) : 0) || a.plan.minutes - b.plan.minutes);
+  const many = options.length > 1;
+  return (
+    <section data-tour="route-options" aria-label="Route options" className="mb-4">
+      {many && (
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <p className="text-[14px] font-semibold text-ink-soft">{options.length} ways to go</p>
+          <div role="radiogroup" aria-label="Sort routes by" className="flex rounded-full bg-sand p-1">
+            {([["time", "Fastest"], ["cost", "Cheapest"]] as const).map(([id, label]) => (
+              <button key={id} role="radio" aria-checked={sort === id} onClick={() => setSort(id)} className={cx("h-8 rounded-full px-3 text-[13px] font-semibold", sort === id ? "bg-card text-ink shadow-card" : "text-ink-soft")}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div role={many ? "radiogroup" : undefined} aria-label={many ? "Routes" : undefined} className="space-y-2">
+        {sorted.map((o, i) => (
+          <RouteCard key={i} option={o} selected={sameRoute(o.plan, plan)} demo={demo} onChoose={many ? () => choosePlan(o.plan) : undefined} />
+        ))}
+      </div>
+      {many && sort === "cost" && new Set(options.map(cost)).size === 1 && (
+        <p className="mt-2 text-[13px] text-ink-soft">Every subway route costs the same: one fare covers changes between lines.</p>
+      )}
+    </section>
+  );
+}
+
 export default function JourneyPage() {
   const router = useRouter();
   const journey = useStore((s) => s.journey);
@@ -90,8 +166,8 @@ export default function JourneyPage() {
       <div className="grid h-full place-items-center px-6">
         <Empty
           title="No journey yet"
-          body="Pick where you are going on Home and TQuest guides you stop by stop."
-          action={<Link href="/" className="inline-flex h-11 items-center rounded-full bg-forest px-6 text-[15px] font-bold text-paper">Plan a journey</Link>}
+          body="Pick two stations on Ride and TQuest guides you stop by stop."
+          action={<Link href="/ride" className="inline-flex h-11 items-center rounded-full bg-forest px-6 text-[15px] font-bold text-paper">Plan a journey</Link>}
         />
       </div>
     );
@@ -109,7 +185,7 @@ export default function JourneyPage() {
 
   const quit = () => {
     end();
-    router.push("/");
+    router.push("/ride");
   };
 
   // One headline, one sentence and one action per stage.
@@ -127,16 +203,16 @@ export default function JourneyPage() {
   const v = view[stage];
 
   return (
-    <div className="scroll-area flex h-full flex-col">
+    <div data-scene={SCENE[stage] ?? "journey"} className="scroll-area flex h-full flex-col">
       <div className="flex items-center justify-between px-3 pt-2">
-        <Link href="/" className="flex h-10 items-center gap-0.5 pr-3 text-[15px] font-semibold text-forest">
-          <ChevronLeft size={20} aria-hidden /> Home
+        <Link href="/ride" className="flex h-10 items-center gap-0.5 pr-3 text-[15px] font-semibold text-forest">
+          <ChevronLeft size={20} aria-hidden /> Ride
         </Link>
         {demo ? <SourceBadge kind="simulated" /> : <SourceBadge kind="estimated" />}
       </div>
 
       {/* Stage progress */}
-      <ol className="mt-1 flex gap-1 px-5" aria-label="Journey progress">
+      <ol data-tour="journey-progress" className="mt-1 flex gap-1 px-5" aria-label="Journey progress">
         {STEP_NAMES.map((n, i) => (
           <li key={n} className="flex-1" aria-current={i === stepIndex(stage) ? "step" : undefined}>
             <span className={cx("block h-1.5 rounded-full", i <= stepIndex(stage) ? "bg-forest" : "bg-sand")} />
@@ -153,10 +229,12 @@ export default function JourneyPage() {
       <div className="flex-1 px-5 pt-5">
         {stage === "planning" && (
           <>
+            <RouteOptions plan={plan} demo={demo} />
             <RouteSummary journey={journey} />
             <p className="mt-3 text-[13px] text-ink-soft">
               Route computed from the MBTA station network. Ride times are estimates from distance, not live predictions.
             </p>
+            <FareSummary plan={plan} className="mt-4" />
             <StationSign id={plan.from} className="mt-5" />
             <Arrivals stationId={plan.from} demo={demo} only={{ route: leg.route, direction }} limit={3} className="mt-3 px-1" />
           </>
@@ -171,6 +249,12 @@ export default function JourneyPage() {
               <Footprints size={19} className="mt-0.5 shrink-0" aria-hidden />
               Keep your eyes up while you walk. TQuest never asks you to look at your phone near the platform edge.
             </p>
+            <p className="flex items-start gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-[14.5px]">
+              <CreditCard size={19} className="mt-0.5 shrink-0 text-forest" aria-hidden />
+              <span>
+                <strong>Have your {formatFare(journeyFare(plan).totalCents)} fare ready.</strong> Tap a contactless card, phone or CharlieCard at the fare gate.
+              </span>
+            </p>
           </div>
         )}
 
@@ -178,7 +262,7 @@ export default function JourneyPage() {
           <>
             <StationSign id={leg.from} />
             <Arrivals stationId={leg.from} demo={demo} only={{ route: leg.route, direction }} limit={3} className="mt-3 px-1" />
-            <Link href="/play" className="mt-4 flex items-center gap-3.5 rounded-2xl bg-ink px-4 py-3.5 text-paper">
+            <Link href="/play" data-tour="play-while-waiting" className="mt-4 flex items-center gap-3.5 rounded-2xl bg-ink px-4 py-3.5 text-paper">
               <Gamepad2 size={24} className="shrink-0 text-gold" aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block text-[16px] font-bold">Play Guess Boston while you wait</span>
@@ -192,7 +276,7 @@ export default function JourneyPage() {
         )}
 
         {(stage === "boarding" || stage === "traveling" || stage === "transferring" || stage === "arriving") && (
-          <div className="rounded-3xl border border-line bg-card p-4 shadow-card">
+          <div data-tour="strip-map" className="rounded-3xl border border-line bg-card p-4 shadow-card">
             <div className="mb-3 flex items-center gap-2">
               <LinePill route={leg.route} />
               <span className="text-[14px] text-ink-soft">toward {leg.toward}</span>
@@ -208,7 +292,7 @@ export default function JourneyPage() {
 
         {stage === "exploring" && (
           nearby.length ? (
-            <ul className="divide-y divide-line">
+            <ul data-tour="nearby-list" className="divide-y divide-line">
               {nearby.slice(0, 5).map(({ place, km }) => {
                 const found = d.landmarks.has(place.id);
                 return (
@@ -265,7 +349,7 @@ export default function JourneyPage() {
           </>
         ) : (
           <>
-            <Button size="lg" className="w-full" onClick={advance}>{v.action}</Button>
+            <Button size="lg" className="w-full" onClick={advance} data-tour="journey-action">{v.action}</Button>
             <Button variant="quiet" size="sm" className="w-full" onClick={quit}>End journey</Button>
           </>
         )}

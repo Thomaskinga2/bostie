@@ -83,7 +83,7 @@ function StampDetail({ stamp, d, onClose }: { stamp: Stamp; d: Derived; onClose:
             </Link>
           )}
           {stamp.kind === "station" && (
-            <Link href="/" onClick={onClose} className={cx(linkButton, "mt-3")}>
+            <Link href="/ride" onClick={onClose} className={cx(linkButton, "mt-3")}>
               Plan a journey
             </Link>
           )}
@@ -151,7 +151,7 @@ export function Stamps({ d }: { d: Derived }) {
         <SectionTitle title="Stamps" sub="One for every station you ride through and every landmark you verify." />
       </div>
 
-      <div role="tablist" aria-label="Stamp type" className="mt-4 flex rounded-full bg-sand p-1">
+      <div data-tour="stamp-tabs" role="tablist" aria-label="Stamp type" className="mt-4 flex rounded-full bg-sand p-1">
         {KINDS.map((k) => (
           <button
             key={k.id}

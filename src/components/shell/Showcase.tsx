@@ -80,6 +80,8 @@ export function ShowcaseSheet() {
 export function GeminiChip({ className }: { className?: string }) {
   const count = useStore((s) => s.ai.length);
   const setShowcase = useStore((s) => s.setShowcase);
+  const demo = useStore((s) => s.demo);
+  if (!demo) return null; // API log: Demo Mode only
   return (
     <button
       onClick={() => setShowcase(true)}

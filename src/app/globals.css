@@ -41,6 +41,7 @@
 
   --font-display: var(--font-caslon), "Iowan Old Style", Georgia, serif;
   --font-sans: var(--font-hanken), -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-hand: var(--font-caveat), "Bradley Hand", cursive;
 
   --radius-sheet: 28px;
   --shadow-card: 0 1px 0 rgb(29 35 32 / 0.04), 0 8px 24px -12px rgb(29 35 32 / 0.18);

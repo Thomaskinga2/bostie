@@ -2,6 +2,10 @@
 // Runs twice: at phone size, and at desktop size inside the iPhone demo frame.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { guideStep, TIP, TOUR, type GuideStepId, type Scene } from "../src/lib/guide";
+
+/** The button label the guide tells a judge to tap. The demo is driven by these, so the guide cannot drift from the app. */
+const control = (id: GuideStepId, n = 0) => guideStep(id).controls[n];
 
 // A valid 1x1 PNG: enough for the client-side downscale step.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
@@ -26,6 +30,7 @@ type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions
 
 async function mockApis(page: Page, over: Mocks = {}) {
   const json = (body: unknown, status = 200) => (route: Route) => route.fulfill({ status, json: body });
+  await page.route("**/tile.openstreetmap.org/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG }));
   await page.route("**/upload.wikimedia.org/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG, headers: { "access-control-allow-origin": "*" } }));
   await page.route("**/api/mbta/predictions**", over.predictions ?? json({
     source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq",
@@ -52,7 +57,7 @@ async function mockApis(page: Page, over: Mocks = {}) {
 async function seed(page: Page, state: Record<string, unknown> = {}) {
   await page.addInitScript((s) => {
     if (!localStorage.getItem("tquest-v1")) localStorage.setItem("tquest-v1", JSON.stringify({ state: s, version: 0 }));
-  }, { onboarded: true, demo: true, name: "Tester", events: [], xp: [], achievements: {}, challenges: {}, saved: [], journey: null, ai: [], guestId: "t", ...state });
+  }, { onboarded: true, demo: true, name: "Tester", events: [], xp: [], achievements: {}, challenges: {}, saved: [], journey: null, ai: [], guestId: "t", tipsOff: true, ...state }); // on-screen tips are off unless a test asks for them
 }
 
 const store = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("tquest-v1")!).state);
@@ -69,6 +74,24 @@ async function dismissRewards(page: Page) {
     await page.waitForTimeout(350);
   }
   return seen;
+}
+
+const tipDialog = (page: Page) => page.getByRole("dialog", { name: "Tip" });
+
+/** Reads and steps through every on-screen tip for the current screen, returning the titles shown. */
+async function finishTips(page: Page) {
+  const tip = tipDialog(page);
+  const seen: string[] = [];
+  for (;;) {
+    try {
+      await tip.waitFor({ state: "visible", timeout: 1500 });
+    } catch {
+      return seen;
+    }
+    seen.push(await tip.getByRole("heading").innerText());
+    await tip.getByRole("button", { name: new RegExp(`^(${TIP.next}|${TIP.done})$`) }).click();
+    await page.waitForTimeout(120);
+  }
 }
 
 async function shot(page: Page, name: string) {
@@ -88,32 +111,79 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
 
   // Welcome → guided demo
   await expect(page.getByRole("heading", { name: "Make every ride an adventure." })).toBeVisible();
+  await page.waitForTimeout(2600); // the train rolls in and the note is pencilled
   await shot(page, "01-welcome");
+  await page.getByRole("button", { name: "Judging? Take the guided demo" }).click();
+
+  // Train doors close over the screen and slide open onto the name step.
+  await page.waitForTimeout(700);
+  await shot(page, "01a-doors");
+  await expect(page.getByRole("heading", { name: "What should we call you?" })).toBeVisible();
   await page.getByLabel("What should we call you?").fill("Judge");
-  await page.getByRole("button", { name: "Start the guided demo" }).click();
-  await expect(page.getByRole("heading", { name: "Judge", exact: true })).toBeVisible();
-  await expect(page.getByText("Demo data").first()).toBeVisible(); // simulated arrivals are labelled
+  await page.waitForTimeout(1600); // let the drawing finish for the screenshot
+  await shot(page, "01a-name");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  // Each screen highlights its features the first time it appears. Collect every tip shown.
+  const tips: string[] = [];
+  const readTips = async () => tips.push(...(await finishTips(page)));
+  await expect(tipDialog(page).getByRole("heading", { name: TOUR.home[0].title })).toBeVisible();
+  await page.waitForTimeout(300);
+  await shot(page, "01b-tip-home");
+  await readTips();
+
+  // Home is the adventure map with its two actions.
+  expect((await store(page)).name).toBe("Judge");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(page.getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore Boston" })).toBeVisible();
   await shot(page, "02-home");
 
   // Plan Harvard → Park Street
-  await page.getByRole("button", { name: "Find route" }).click();
+  await page.getByRole("link", { name: "Plan a ride" }).click();
+  await readTips();
+  await expect(page.getByText("Demo data").first()).toBeVisible(); // simulated arrivals are labelled
+  await shot(page, "02b-ride");
+  await page.getByRole("button", { name: control("plan") }).click();
   await expect(page).toHaveURL(/\/journey$/);
+  await readTips();
   await expect(page.getByRole("heading", { name: "Harvard to Park Street" })).toBeVisible();
   await expect(page.getByText("4 stops, about")).toBeVisible();
   await shot(page, "03-route");
-  await page.getByRole("button", { name: "Start journey" }).click();
-  await page.getByRole("button", { name: "I am at the station" }).click();
+
+  // Fare and how to pay, before the judge begins the journey.
+  const fare = page.getByRole("region", { name: "Fare" });
+  await expect(fare.getByTestId("fare-total")).toHaveText("$2.40");
+  await expect(fare.getByRole("list", { name: "Ways to pay" }).getByText("CharlieCard")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Route options" }).getByText("No changes")).toBeVisible();
+  await fare.getByRole("button", { name: "Fare breakdown and how to pay" }).click();
+  await expect(fare.getByText("Red Line: Harvard to Park Street")).toBeVisible();
+  await expect(fare.getByRole("link", { name: "Official MBTA fares" })).toHaveAttribute("href", "https://www.mbta.com/fares");
+  await fare.scrollIntoViewIfNeeded();
+  await shot(page, "03b-fare");
+  await page.getByRole("button", { name: control("begin", 0) }).click();
+  await page.getByRole("button", { name: control("begin", 1) }).click();
+  await readTips();
   await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
   await shot(page, "04-waiting");
 
   // Guess Boston while waiting
   await page.getByRole("main").getByRole("link", { name: /Play Guess Boston while you wait/ }).click();
-  await page.getByRole("button", { name: "Start round" }).click();
+  await readTips();
+  await page.getByRole("button", { name: control("play") }).click();
+  await expect(tipDialog(page).getByRole("heading", { name: TOUR["play-round"][0].title })).toBeVisible();
+  await tipDialog(page).getByRole("button", { name: TIP.next }).click();
+  await expect(tipDialog(page).getByRole("heading", { name: TOUR["play-round"][1].title })).toBeVisible();
+  await page.waitForTimeout(300);
+  await shot(page, "05b-tip-round");
+  tips.push(TOUR["play-round"][0].title);
+  await readTips();
   await expect(page.getByRole("heading", { name: "Where is this?" })).toBeVisible();
   await shot(page, "05-round");
   await page.getByLabel("Your guess").fill("that gold dome building by the common");
   await page.getByRole("button", { name: "Submit guess" }).click();
   expect(await dismissRewards(page)).toContain("Sharp Eye");
+  await readTips();
   await expect(page.getByText("MOCK COACHING")).toBeVisible();
   await expect(page.getByText("points", { exact: true })).toBeVisible();
   await shot(page, "06-round-result");
@@ -121,11 +191,12 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
 
   // Ride four stops, collecting a stamp at each station
   await page.goto("/journey");
-  await page.getByRole("button", { name: "My train is here" }).click();
+  await page.getByRole("button", { name: control("ride", 0) }).click();
   await page.waitForTimeout(900); // let the stamp land
   await shot(page, "07-stamp-reveal");
   expect(await dismissRewards(page)).toContain("Harvard");
-  await page.getByRole("button", { name: "I am on board" }).click();
+  await page.getByRole("button", { name: control("ride", 1) }).click();
+  await readTips();
   for (const stop of ["Central", "Kendall/MIT", "Charles/MGH", "Park Street"]) {
     await expect(page.getByRole("heading", { name: `Next stop: ${stop}` })).toBeVisible();
     if (stop === "Kendall/MIT") await shot(page, "08-riding");
@@ -133,29 +204,33 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
     expect(await dismissRewards(page)).toContain(stop);
   }
   await expect(page.getByRole("heading", { name: "You have arrived at Park Street" })).toBeVisible();
-  await page.getByRole("button", { name: "Explore nearby" }).click();
+  await page.getByRole("button", { name: control("scan") }).click();
+  await readTips();
   await expect(page.getByText("Massachusetts State House").first()).toBeVisible();
   await shot(page, "09-explore-nearby");
 
   // Scan a landmark (upload fallback), unlock its stamp
   await page.goto("/scan");
+  await readTips();
   await shot(page, "10-scan");
   await upload(page);
   expect(await dismissRewards(page)).toContain("Massachusetts State House");
+  await readTips();
   await expect(page.getByText("Landmark verified")).toBeVisible();
   await expect(page.getByText("large gilded gold dome")).toBeVisible();
   await shot(page, "11-scan-result");
 
   // Complete the journey
   await page.goto("/journey");
-  await page.getByRole("button", { name: "Complete journey" }).click();
+  await page.getByRole("button", { name: control("finish") }).click();
   expect(await dismissRewards(page)).toContain("First Ride");
   await expect(page.getByRole("heading", { name: "Journey complete" })).toBeVisible();
   await shot(page, "12-journey-complete");
 
   // Passport reflects everything, and the ledger adds up
-  await page.getByRole("button", { name: "Open passport" }).click();
+  await page.getByRole("button", { name: control("passport") }).click();
   await expect(page).toHaveURL(/\/passport$/);
+  await readTips();
   await expect(page.getByText("5 of 125 collected")).toBeVisible();
   await shot(page, "13-passport");
   const s = await store(page);
@@ -171,6 +246,14 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await noSidewaysScroll(page);
   await page.getByRole("tab", { name: "Landmarks" }).click();
   await shot(page, "14-passport-landmarks");
+
+  // Every highlight defined in lib/guide.ts found its feature on screen.
+  await nav.getByRole("link", { name: "Discover" }).click();
+  await readTips();
+  await shot(page, "14b-discover");
+  for (const scene of Object.keys(TOUR) as Scene[])
+    for (const spot of TOUR[scene]) expect(tips, `tip “${spot.title}” (${scene} → data-tour="${spot.target}") was never shown`).toContain(spot.title);
+  expect(Object.keys((await store(page)).tipsSeen).sort()).toEqual(Object.keys(TOUR).sort());
 });
 
 test("scanning the same landmark twice never grants a second reward", async ({ page }) => {
@@ -276,7 +359,7 @@ test("live transit: real predictions are labelled live, failures degrade honestl
         : route.fulfill({ json: { source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq", predictions: [{ id: "p1", route: "Red", headsign: "Ashmont", direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null }] } }),
   });
   await seed(page, { demo: false });
-  await page.goto("/");
+  await page.goto("/ride");
   await expect(page.getByText("Live MBTA", { exact: true }).first()).toBeVisible();
   await expect(page.locator("li", { hasText: "Ashmont" }).first()).toBeVisible();
   await expect(page.getByText("Demo data")).toHaveCount(0);
@@ -288,8 +371,30 @@ test("live transit: real predictions are labelled live, failures degrade honestl
   await expect(page.getByText("Estimated", { exact: true }).first()).toBeVisible();
   await shot(page, "16-transfer-route");
 
+  // Several legs, one fare: changes between subway lines are not charged again.
+  const fare = page.getByRole("region", { name: "Fare" });
+  await expect(fare.getByTestId("fare-total")).toHaveText("$2.40");
+  await fare.getByRole("button", { name: "Fare breakdown and how to pay" }).click();
+  await expect(fare.getByText("Free transfer").first()).toBeVisible();
+  await fare.getByRole("radio", { name: "reduced" }).click();
+  await expect(fare.getByTestId("fare-total")).toHaveText("$1.10");
+  await expect(fare.getByText(/mTicket app is for Commuter Rail and ferries/)).toBeVisible();
+  // Route comparison: cards carry time, changes, fare and the next live train.
+  const options = page.getByRole("region", { name: "Route options" });
+  await expect(options.getByText("$2.40").first()).toBeVisible();
+  await expect(options.getByText(/Next train in \d+ min \(live\)/).first()).toBeVisible();
+  if (await options.getByRole("radio", { name: "Cheapest" }).count()) {
+    await options.getByRole("radio", { name: "Cheapest" }).click();
+    await expect(options.getByText("Every subway route costs the same")).toBeVisible();
+    const cards = options.getByRole("radiogroup", { name: "Routes" }).getByRole("radio");
+    await cards.nth(1).click();
+    await expect(cards.nth(1)).toHaveAttribute("aria-checked", "true"); // choosing another route replaces the plan
+  }
+  await fare.scrollIntoViewIfNeeded();
+  await shot(page, "16b-fare-transfer");
+
   down = true;
-  await page.goto("/");
+  await page.goto("/ride");
   await expect(page.getByText("Journey in progress").or(page.getByText("Continue journey")).first()).toBeVisible();
   await expect(page.getByText("Live MBTA predictions are unavailable right now.")).toBeVisible();
   await expect(page.getByText("Offline", { exact: true })).toBeVisible();
@@ -300,16 +405,22 @@ test("navigation, layout and the device frame", async ({ page }, info) => {
   await seed(page);
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main" });
-  for (const [tab, heading] of [["Explore", null], ["Scan", "Scan a landmark"], ["Play", "Guess Boston"], ["Passport", "Stamps"], ["Home", "Tester"]] as const) {
-    await nav.getByRole("link", { name: tab }).click();
-    await expect(nav.getByRole("link", { name: tab })).toHaveAttribute("aria-current", "page");
+  for (const [tab, heading] of [["Ride", "Plan a ride"], ["Discover", "Explore Boston"], ["Passport", "Stamps"], ["Map", null]] as const) {
+    await nav.getByRole("link", { name: tab, exact: true }).click();
+    await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
     if (heading) await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
     await noSidewaysScroll(page);
-    if (tab === "Explore") {
-      await expect(page.getByText("Schematic map")).toBeVisible(); // no Google Maps key in tests
-      await shot(page, "17-explore");
-    }
   }
+  // Home: a real street map (tiles mocked here) with credit, and the two main actions.
+  await expect(page.getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "OpenStreetMap" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Plan a ride" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Explore Boston" })).toBeVisible();
+  await shot(page, "17-map-home");
+  // Quests are reached from Discover and keep its tab lit.
+  await page.goto("/scan");
+  await expect(nav.getByRole("link", { name: "Discover", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.goto("/");
 
   const screen = (await page.locator("#screen").boundingBox())!;
   const viewport = page.viewportSize()!;
@@ -320,6 +431,14 @@ test("navigation, layout and the device frame", async ({ page }, info) => {
     expect(screen.y + screen.height).toBeLessThanOrEqual(viewport.height);
     await expect(page.getByRole("heading", { name: "Judge walkthrough" })).toBeVisible();
     await shot(page, "18-desktop-frame");
+    // Judge tools belong to Demo Mode: switching it off leaves a clean interface.
+    await page.getByRole("button", { name: "Demo mode on" }).click();
+    await expect(page.getByRole("heading", { name: "Judge walkthrough" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Gemini, live" })).toHaveCount(0);
+    await expect(page.locator('[data-tour="demo-strip"]')).toHaveCount(0);
+    await shot(page, "18b-desktop-clean");
+    await page.getByRole("button", { name: "Demo mode", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Judge walkthrough" })).toBeVisible();
     await page.getByRole("button", { name: "Fullscreen" }).click();
     expect((await page.locator("#screen").boundingBox())!.height).toBe(viewport.height);
     await page.getByRole("button", { name: "Show phone frame" }).click();
@@ -344,14 +463,83 @@ test("saved places and resetting the demo", async ({ page }) => {
   expect((await store(page)).saved).toEqual(["place-harsq"]);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Home" }).click();
-  await expect(page.getByRole("heading", { name: "Saved places" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove Harvard from saved places" })).toBeVisible();
 
   await page.goto("/passport");
   await page.getByRole("button", { name: "Reset all progress" }).click();
   await page.getByRole("button", { name: "Erase everything" }).click();
   await expect(page.getByText("0 of 125 collected")).toBeVisible();
+  await expect(tipDialog(page).getByRole("heading", { name: TOUR.passport[0].title })).toBeVisible(); // tips return for the next judge
   const s = await store(page);
   expect([s.events.length, s.xp.length, s.saved.length]).toEqual([0, 0, 0]);
   expect(s.onboarded).toBe(true); // straight back into the demo, no welcome screen
+});
+
+test("tips: skipping turns them off everywhere, and Guide replays the screen you are on", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { tipsOff: false });
+  await page.goto("/");
+  const tip = tipDialog(page);
+  await expect(tip.getByRole("heading", { name: TOUR.home[0].title })).toBeVisible();
+  await expect(tip.getByText(`1 of ${TOUR.home.length}`)).toBeVisible();
+  await tip.getByRole("button", { name: TIP.next }).click();
+  await expect(tip.getByRole("heading", { name: TOUR.home[1].title })).toBeVisible();
+  await tip.getByRole("button", { name: TIP.back }).click();
+  await expect(tip.getByRole("heading", { name: TOUR.home[0].title })).toBeVisible();
+
+  await tip.getByRole("button", { name: TIP.skip }).click();
+  await expect(tip).toHaveCount(0);
+  expect((await store(page)).tipsOff).toBe(true);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Discover" }).click();
+  await expect(page.getByRole("heading", { name: "Explore Boston" })).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(tip).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Guide", exact: true }).click();
+  await expect(tip.getByRole("heading", { name: TOUR.discover[0].title })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tip).toHaveCount(0);
+});
+
+test("exploring without the demo still gets tips, minus the demo-only ones", async ({ page }) => {
+  await mockApis(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Start exploring" }).click();
+  await page.getByRole("button", { name: "Continue" }).click(); // name is optional
+  expect((await store(page)).name).toBe("Explorer");
+  const shown = await finishTips(page);
+  expect(shown).toEqual(TOUR.home.filter((s) => s.target !== "demo-strip").map((s) => s.title)); // no gold strip outside demo mode
+  await page.getByRole("button", { name: "Tips" }).click();
+  await expect(tipDialog(page)).toBeVisible();
+});
+
+test("Explore Boston: interests and budget give real destinations, directions and saving, with no quest needed", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/discover");
+  await expect(page.getByRole("heading", { name: "Closest to you" })).toBeVisible();
+
+  // Interest + budget
+  await page.getByRole("button", { name: "Sports" }).click();
+  await expect(page.getByRole("heading", { name: "Picked for you" })).toBeVisible();
+  const first = page.locator('[data-tour="discover-results"] > li').first();
+  await expect(first.getByRole("heading", { name: "Fenway Park" })).toBeVisible();
+  await expect(first.getByText("Kenmore")).toBeVisible(); // nearest station, from the network data
+  await expect(first.getByText(/Matches your interest in sports/)).toBeVisible();
+  await shot(page, "19-discover-picks");
+
+  await page.getByRole("radio", { name: "Free only" }).click();
+  await expect(page.getByRole("heading", { name: "Fenway Park" })).toHaveCount(0); // a paid tour is out of a free budget
+  await page.getByRole("radio", { name: "Any budget" }).click();
+
+  // Save, details, directions
+  await first.getByRole("button", { name: "Save Fenway Park" }).click();
+  expect((await store(page)).saved).toEqual(["fenway-park"]);
+  await first.getByRole("button", { name: "Fenway Park: details" }).click();
+  await expect(page.getByRole("dialog", { name: "Fenway Park" }).getByText(/oldest ballpark/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await first.getByRole("button", { name: "Get directions" }).click();
+  await expect(page).toHaveURL(/\/journey$/);
+  await expect(page.getByRole("heading", { name: "Park Street to Kenmore" })).toBeVisible();
+  expect((await store(page)).events).toHaveLength(0); // nothing had to be completed first
 });

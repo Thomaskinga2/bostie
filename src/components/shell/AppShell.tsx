@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import { useSupabaseSync } from "@/lib/sync";
 import { Celebrations } from "./Celebrations";
 import { DemoChecklist, DemoStrip } from "./DemoGuide";
+import { GuideButton, Tour } from "./Tour";
 import { ShowcaseLog, ShowcaseSheet } from "./Showcase";
 import { TabBar } from "./TabBar";
 import { Logo, Welcome } from "./Welcome";
@@ -40,9 +41,8 @@ function StatusBar() {
   );
 }
 
+/** Judge walkthrough. Demo Mode only. */
 function DeskLeft() {
-  const demo = useStore((s) => s.demo);
-  const setDemo = useStore((s) => s.setDemo);
   const resetAll = useStore((s) => s.resetAll);
   const router = useRouter();
   return (
@@ -54,24 +54,15 @@ function DeskLeft() {
           <p className="mt-1 text-[14px] text-white/60">Make every ride an adventure.</p>
         </div>
       </div>
-      <div className="mt-8 flex items-center justify-between">
-        <h2 className="text-[19px] font-bold">Judge walkthrough</h2>
-        <label className="flex cursor-pointer items-center gap-2 text-[13px] text-white/70">
-          Demo mode
-          <input type="checkbox" checked={demo} onChange={(e) => setDemo(e.target.checked)} className="size-4 accent-[#b8862b]" />
-        </label>
+      <h2 className="mt-8 text-[19px] font-bold">Judge walkthrough</h2>
+      <div className="-mx-3 mt-3">
+        <DemoChecklist />
       </div>
-      {demo ? (
-        <div className="mt-3 -mx-3">
-          <DemoChecklist />
-        </div>
-      ) : (
-        <p className="mt-3 text-[14px] leading-relaxed text-white/65">
-          Demo mode is off: arrivals are live MBTA data and location comes from your device. Turn it on for the guided
-          Harvard to Park Street journey.
-        </p>
-      )}
       <div className="mt-auto space-y-2 pt-6">
+        <GuideButton
+          label="Replay tips for this screen"
+          className="h-11 w-full justify-center rounded-full bg-white/10 text-[14px] text-white hover:bg-white/15"
+        />
         <button
           onClick={() => {
             resetAll();
@@ -87,6 +78,7 @@ function DeskLeft() {
   );
 }
 
+/** Live log of Gemini calls. Demo Mode only. */
 function DeskRight() {
   return (
     <aside className="hidden w-[330px] shrink-0 flex-col self-stretch py-10 text-white framed:min-[1160px]:flex">
@@ -108,6 +100,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const ready = useMounted();
   const [full, setFull] = useState(false);
   const onboarded = useStore((s) => s.onboarded);
+  const demo = useStore((s) => s.demo);
+  const setDemo = useStore((s) => s.setDemo);
+  // Regular visitors get the app on its own. The walkthrough and API log belong to Demo Mode.
+  const judging = ready && onboarded && demo;
   useSupabaseSync(); // no-op unless Supabase env vars are set
   useEffect(() => {
     if (full) document.documentElement.dataset.full = "1";
@@ -116,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-dvh justify-center framed:items-center framed:gap-12 framed:px-8">
-      <DeskLeft />
+      {judging && <DeskLeft />}
       <div className="relative h-full w-full max-w-[560px] framed:h-[min(868px,calc(100dvh-36px))] framed:w-[402px] framed:shrink-0 framed:rounded-[58px] framed:bg-[#0b0e0c] framed:p-[11px] framed:shadow-[0_0_0_2px_#2c3530,0_40px_90px_-30px_rgb(0_0_0/0.8)]">
         {/* side buttons, purely decorative */}
         <span aria-hidden className="absolute -left-[3px] top-[150px] hidden h-9 w-[3px] rounded-l bg-[#2c3530] framed:block" />
@@ -144,21 +140,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           {ready && (
             <>
               <ShowcaseSheet />
+              {onboarded && <Tour />}
               <Celebrations />
             </>
           )}
         </div>
       </div>
-      <DeskRight />
+      {judging && <DeskRight />}
 
-      {/* Desktop only: switch between the device frame and a full-window app. */}
-      <button
-        onClick={() => setFull(!full)}
-        className="fixed right-4 top-4 z-[60] hidden h-10 items-center gap-2 rounded-full bg-ink/85 px-4 text-[13px] font-semibold text-paper md:flex [@media(hover:none)]:hidden"
-      >
-        {full ? <Minimize2 size={15} aria-hidden /> : <Maximize2 size={15} aria-hidden />}
-        {full ? "Show phone frame" : "Fullscreen"}
-      </button>
+      {/* Desktop only: Demo Mode switch, and the device frame / full-window toggle. */}
+      <div className="fixed right-4 top-4 z-[60] hidden gap-2 md:flex [@media(hover:none)]:hidden">
+        {ready && onboarded && (
+          <button
+            onClick={() => setDemo(!demo)}
+            aria-pressed={demo}
+            className={`flex h-10 items-center gap-2 rounded-full px-4 text-[13px] font-semibold ${demo ? "bg-gold text-forest-deep" : "bg-ink/85 text-paper"}`}
+          >
+            <Sparkles size={15} aria-hidden /> {demo ? "Demo mode on" : "Demo mode"}
+          </button>
+        )}
+        <button onClick={() => setFull(!full)} className="flex h-10 items-center gap-2 rounded-full bg-ink/85 px-4 text-[13px] font-semibold text-paper">
+          {full ? <Minimize2 size={15} aria-hidden /> : <Maximize2 size={15} aria-hidden />}
+          {full ? "Show phone frame" : "Fullscreen"}
+        </button>
+      </div>
     </div>
   );
 }

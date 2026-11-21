@@ -106,9 +106,17 @@ function toward(route: string, stops: string[]): string {
   return [...names].join("/");
 }
 
+export type PlanOptions = {
+  /** Minutes a change of line "costs" during the search. Raise it to prefer fewer changes. */
+  transferPenalty?: number;
+  /** Stations to steer changes away from, to surface a genuinely different route. */
+  avoidTransfersAt?: string[];
+};
+
 /** Dijkstra over (station, route) states: minimises ride time plus a transfer penalty. */
-export function planRoute(fromId: string, toId: string): Plan | null {
+export function planRoute(fromId: string, toId: string, opts: PlanOptions = {}): Plan | null {
   if (!STATION[fromId] || !STATION[toId] || fromId === toId) return null;
+  const penalty = opts.transferPenalty ?? TRANSFER_MIN;
   const key = (s: string, r: string) => `${s}|${r}`;
   const dist = new Map<string, number>();
   const prev = new Map<string, string>();
@@ -136,7 +144,7 @@ export function planRoute(fromId: string, toId: string): Plan | null {
       }
     };
     for (const n of adjacency[r]?.[s] ?? []) relax(key(n, r), best + rideMinutes(r, s, n));
-    for (const r2 of STATION[s].routes) if (r2 !== r) relax(key(s, r2), best + TRANSFER_MIN);
+    for (const r2 of STATION[s].routes) if (r2 !== r) relax(key(s, r2), best + penalty + (opts.avoidTransfersAt?.includes(s) ? 12 : 0));
   }
   if (!end) return null;
 
@@ -178,4 +186,26 @@ export function legDirection(route: string, from: string, to: string): 0 | 1 {
     if (i >= 0 && j >= 0) return j > i ? 0 : 1;
   }
   return 0;
+}
+
+export type RouteOption = { plan: Plan; tag: "Fastest" | "Fewest changes" | "Alternative" };
+
+/** Same trains in the same order: Green branches sharing a trunk count as one route. */
+const signature = (p: Plan) => p.legs.map((l) => `${l.line}:${l.from}>${l.to}`).join("|");
+
+/**
+ * Up to three distinct ways to make a trip: the fastest, one that prefers fewer changes,
+ * and one that changes somewhere else. Alternatives much slower than the best are dropped.
+ */
+export function routeOptions(fromId: string, toId: string): RouteOption[] {
+  const best = planRoute(fromId, toId);
+  if (!best) return [];
+  const out: RouteOption[] = [{ plan: best, tag: "Fastest" }];
+  const add = (plan: Plan | null, tag: RouteOption["tag"]) => {
+    if (plan && plan.minutes <= best.minutes * 1.5 + 6 && !out.some((o) => signature(o.plan) === signature(plan))) out.push({ plan, tag });
+  };
+  const calm = planRoute(fromId, toId, { transferPenalty: 15 });
+  add(calm, calm && calm.legs.length < best.legs.length ? "Fewest changes" : "Alternative");
+  add(planRoute(fromId, toId, { avoidTransfersAt: best.legs.slice(0, -1).map((l) => l.to) }), "Alternative");
+  return out;
 }

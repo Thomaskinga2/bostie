@@ -22,7 +22,7 @@ export function Cover({ now }: { now: number }) {
   const week = Array.from({ length: 7 }, (_, i) => streak.today - 6 + i);
 
   return (
-    <section className="relative rounded-b-[34px] bg-forest px-5 pb-6 pt-5 text-paper">
+    <section data-tour="passport-cover" className="relative rounded-b-[34px] bg-forest px-5 pb-6 pt-5 text-paper">
       {/* stitched inner border, like a passport cover */}
       <div aria-hidden className="pointer-events-none absolute inset-x-2 bottom-2 top-2 rounded-[26px] border border-dashed border-paper/20" />
 

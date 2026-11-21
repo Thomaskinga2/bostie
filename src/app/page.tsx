@@ -1,269 +1,352 @@
 "use client";
-import { ArrowUpDown, ChevronRight, Flame, LocateFixed, TriangleAlert } from "lucide-react";
+import { Bookmark, BookmarkCheck, Compass, Footprints, LocateFixed, ScanLine, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Arrivals } from "@/components/Arrivals";
+import { CityMap, TRANSIT_LINES, type MapLine, type MapMarker } from "@/components/map/CityMap";
 import { Sheet } from "@/components/Sheet";
-import { StampArt } from "@/components/Stamp";
-import { StationSelect } from "@/components/StationSelect";
-import { Button, cx, Empty, LinePill, Meter, NamedIcon, Photo, StationSign } from "@/components/ui";
-import { useAlerts, useNow } from "@/lib/api";
-import { CHALLENGES, challengeProgress, derive, levelFor, STAMP, streakFor, totalXp } from "@/lib/gamification";
-import { formatDistance, walkMinutes } from "@/lib/geo";
-import { nearestStation, routeLabel, STATION } from "@/lib/network";
-import { PLACE } from "@/lib/places";
+import { GuideButton } from "@/components/shell/Tour";
+import { Logo } from "@/components/shell/Welcome";
+import { RarityPips, rarityLabel, StampArt } from "@/components/Stamp";
+import { Button, cx, Photo, shortDate, StationSign } from "@/components/ui";
+import { derive, levelFor, STAMP, totalXp } from "@/lib/gamification";
+import { distanceKm, formatDistance, walkMinutes, type LatLng } from "@/lib/geo";
+import { LINES, nearestStation, STATION, STATIONS, type LineId, type Station } from "@/lib/network";
+import { LANDMARKS, landmarksNearStation, PLACE, stationFor, type Place } from "@/lib/places";
 import { DEMO_ROUTE, useStore, useWhere } from "@/lib/store";
 
-const STAGE_LABEL: Record<string, string> = {
-  planning: "Route ready", walking: "Walking to the station", waiting: "Waiting for your train", boarding: "Boarding",
-  traveling: "On the train", transferring: "Changing lines", arriving: "Arriving", exploring: "Exploring nearby", complete: "Journey complete",
-};
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "stations", label: "Stations" },
+  { id: "landmarks", label: "Landmarks" },
+  { id: "saved", label: "Saved" },
+  { id: "undiscovered", label: "Undiscovered" },
+] as const;
+type Filter = (typeof FILTERS)[number]["id"];
 
-function greeting() {
-  const h = new Date().getHours();
-  return h < 5 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+const PARK_STREET = STATION["place-pktrm"];
+const pill = "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold shadow-card";
+const linkButton = "inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-6 text-[16px] font-semibold";
+
+function LineTags({ lines }: { lines: LineId[] }) {
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {lines.map((l) => (
+        <span key={l} className="inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-bold leading-none text-white" style={{ background: LINES[l].color }}>
+          {LINES[l].name}
+        </span>
+      ))}
+    </span>
+  );
 }
 
-export default function Home() {
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-t border-line py-2.5 text-[14.5px]">
+      <dt className="shrink-0 text-ink-soft">{label}</dt>
+      <dd className="text-right font-semibold">{children}</dd>
+    </div>
+  );
+}
+
+function Collectible({ stampId, owned }: { stampId: string; owned: boolean }) {
+  const stamp = STAMP[stampId];
+  return (
+    <div className="mt-3 flex items-center gap-4 rounded-2xl bg-paper p-3.5">
+      <StampArt stamp={stamp} owned={owned} className="w-[76px] shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[13px] text-ink-soft">{owned ? "In your passport" : "Stamp on offer"}</p>
+        <p className="flex items-center gap-2 text-[15px] font-bold">
+          {rarityLabel(stamp.rarity)} <RarityPips rarity={stamp.rarity} />
+        </p>
+        <p className="mt-0.5 text-[13px] leading-snug text-ink-soft">{stamp.rule}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Home: the adventure map, with the two things you can do from it. */
+export default function HomeMap() {
   const router = useRouter();
-  const name = useStore((s) => s.name);
   const events = useStore((s) => s.events);
   const xp = useStore((s) => s.xp);
-  const challenges = useStore((s) => s.challenges);
   const saved = useStore((s) => s.saved);
   const journey = useStore((s) => s.journey);
   const demo = useStore((s) => s.demo);
   const geoStatus = useStore((s) => s.geoStatus);
   const requestLocation = useStore((s) => s.requestLocation);
+  const toggleSaved = useStore((s) => s.toggleSaved);
   const startJourney = useStore((s) => s.startJourney);
-  const where = useWhere();
+  const { at, source } = useWhere();
+
+  const [filter, setFilter] = useState<Filter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [walkOn, setWalkOn] = useState(false);
+  const [walkSheet, setWalkSheet] = useState(false);
+  const [note, setNote] = useState("");
 
   const d = useMemo(() => derive(events), [events]);
   const total = totalXp(xp);
   const level = levelFor(total);
-  const now = useNow(60_000);
-  const streak = useMemo(() => streakFor(events, now), [events, now]);
-  const near = where.at ? nearestStation(where.at) : null;
+  const riding = !!journey && journey.stage !== "complete";
 
-  const [from, setFrom] = useState(DEMO_ROUTE.from);
-  const [to, setTo] = useState(DEMO_ROUTE.to);
-  const [planError, setPlanError] = useState("");
-  const [alertsOpen, setAlertsOpen] = useState(false);
-  const alerts = useAlerts();
+  const select = (id: string | null) => {
+    setNote("");
+    setWalkSheet(false);
+    setSelectedId(id);
+  };
 
-  const plan = () => {
-    if (from === to) return setPlanError("Pick two different stations.");
-    if (!startJourney(from, to)) return setPlanError("No rail route found between those stations.");
+  // Three nearest undiscovered landmarks, visited in nearest-neighbour order.
+  const walk = useMemo(() => {
+    const origin: LatLng = at ?? PARK_STREET;
+    const pool = LANDMARKS.filter((l) => !d.landmarks.has(l.id))
+      .sort((a, b) => distanceKm(origin, a) - distanceKm(origin, b))
+      .slice(0, 3);
+    const steps: { place: Place; km: number; minutes: number }[] = [];
+    let here = origin;
+    while (pool.length) {
+      pool.sort((a, b) => distanceKm(here, a) - distanceKm(here, b));
+      const place = pool.shift()!;
+      const km = distanceKm(here, place);
+      steps.push({ place, km, minutes: walkMinutes(km) });
+      here = place;
+    }
+    return { origin, steps, minutes: steps.reduce((n, s) => n + s.minutes, 0) };
+  }, [at, d]);
+
+  const markers = useMemo(() => {
+    const show = (isStation: boolean, id: string, done: boolean) =>
+      filter === "all" || (filter === "stations" && isStation) || (filter === "landmarks" && !isStation) ||
+      (filter === "saved" && saved.includes(id)) || (filter === "undiscovered" && !done);
+    const out: MapMarker[] = [];
+    for (const s of STATIONS) {
+      const done = d.stations.has(s.id);
+      if (show(true, s.id, done)) out.push({ id: s.id, lat: s.lat, lng: s.lng, kind: saved.includes(s.id) ? "saved" : "station", label: s.name, color: LINES[s.lines[0]].color, done });
+    }
+    for (const l of LANDMARKS) {
+      const done = d.landmarks.has(l.id);
+      if (show(false, l.id, done)) out.push({ id: l.id, lat: l.lat, lng: l.lng, kind: saved.includes(l.id) ? "saved" : "landmark", label: l.name, done });
+    }
+    if (at) out.push({ id: "user", lat: at.lat, lng: at.lng, kind: "user", label: source === "simulated" ? "You (demo)" : "You" });
+    return out;
+  }, [filter, saved, d, at, source]);
+
+  const lines = useMemo(() => {
+    const out: MapLine[] = [...TRANSIT_LINES];
+    if (riding)
+      journey.plan.legs.forEach((leg, i) =>
+        out.push({ id: `journey-${i}`, color: LINES[leg.line].color, emphasis: true, path: leg.stops.map((id) => STATION[id]) }),
+      );
+    if (walkOn && walk.steps.length)
+      out.push({ id: "walk", color: "#1f4b3a", emphasis: true, dashed: true, path: [walk.origin, ...walk.steps.map((s) => s.place)] });
+    return out;
+  }, [riding, journey, walkOn, walk]);
+
+  // Frame the player together with downtown when they are in Boston; otherwise open on downtown.
+  const center = useMemo(() => ({ lat: PARK_STREET.lat, lng: PARK_STREET.lng }), []);
+  const fit = useMemo(() => {
+    if (walkOn && walk.steps.length) return [walk.origin, ...walk.steps.map((s) => s.place)].map((p) => ({ lat: p.lat, lng: p.lng }));
+    if (at && distanceKm(at, PARK_STREET) < 9) return [{ lat: at.lat, lng: at.lng }, { lat: PARK_STREET.lat, lng: PARK_STREET.lng }, { lat: 42.3663, lng: -71.0544 }];
+    return undefined;
+  }, [walkOn, walk, at]);
+
+  const place = selectedId ? PLACE[selectedId] : undefined;
+  const station: Station | undefined = selectedId ? STATION[selectedId] : undefined;
+
+  /** Plans a trip from the station nearest the player to `toId`. */
+  const planTo = (toId: string, alreadyThere: string) => {
+    const from = at ? nearestStation(at).station.id : DEMO_ROUTE.from;
+    if (from === toId || !startJourney(from, toId)) return setNote(alreadyThere);
     router.push("/journey");
   };
 
-  const active = CHALLENGES.filter((c) => challenges[c.id] && !challenges[c.id].completedAt);
-  const recent = Object.entries(d.stamps).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const stationId = near?.station.id ?? from;
-  const inProgress = journey && journey.stage !== "complete";
+  const saveButton = (id: string) => {
+    const on = saved.includes(id);
+    return (
+      <Button variant="secondary" className="w-full" onClick={() => toggleSaved(id)} aria-pressed={on}>
+        {on ? <BookmarkCheck size={18} aria-hidden /> : <Bookmark size={18} aria-hidden />}
+        {on ? "Saved" : "Save"}
+      </Button>
+    );
+  };
+  const tripAction = (label: string, toId: string, alreadyThere: string) =>
+    riding ? (
+      <Link href="/journey" className={cx(linkButton, "border border-line bg-card text-ink")}>
+        <TrainFront size={18} aria-hidden /> Journey in progress
+      </Link>
+    ) : (
+      <Button className="w-full" onClick={() => planTo(toId, alreadyThere)}>
+        <TrainFront size={18} aria-hidden /> {label}
+      </Button>
+    );
+
+  const locationHelp =
+    geoStatus === "denied" ? "Location is blocked for this site. Allow it in your browser settings, then try again."
+    : geoStatus === "unavailable" ? "Your location could not be found. Check your signal and try again."
+    : "";
 
   return (
-    <div className="scroll-area h-full pb-8">
-      <header className="px-5 pt-4">
-        <p className="text-[15px] text-ink-soft">{greeting()},</p>
-        <h1 className="text-[34px] font-bold leading-[1.05]">{name}</h1>
-
-        <Link href="/passport" className="mt-4 flex items-center gap-4 rounded-3xl bg-forest px-4 py-3.5 text-paper shadow-lift">
-          <span className="grid size-[54px] shrink-0 place-items-center rounded-full border-[3px] border-gold bg-paper font-display text-[26px] font-bold leading-none text-forest">
-            {level.level}
+    <div data-scene="home" className="relative h-full">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 space-y-2 p-3">
+        <h1 className="sr-only">TQuest adventure map</h1>
+        <div className="flex items-center gap-2">
+          <span className="pointer-events-auto flex h-11 items-center gap-2 rounded-full bg-card pl-1.5 pr-4 shadow-card">
+            <Logo size={32} /> <span className="font-display text-[18px] font-bold">TQuest</span>
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[16px] font-bold">{level.title}</span>
-              <span className="shrink-0 text-[14px] font-semibold tabular-nums text-gold-soft">{total} XP</span>
-            </span>
-            <Meter value={level.progress} color="var(--color-gold)" className="mt-2 bg-white/15" />
-            <span className="mt-1.5 block text-[12.5px] text-paper/70">
-              {level.next === null ? "Top level reached" : `${level.toNext} XP to level ${level.level + 1}`}
-            </span>
-          </span>
-          <span className="flex shrink-0 flex-col items-center" aria-label={`${streak.current} day streak`}>
-            <Flame size={22} className={streak.current ? "text-gold" : "text-paper/40"} fill={streak.current ? "currentColor" : "none"} aria-hidden />
-            <span className="text-[13px] font-bold tabular-nums">{streak.current}d</span>
-          </span>
-        </Link>
-      </header>
-
-      {/* Journey planner */}
-      <section className="mt-6 px-5" aria-labelledby="plan-h">
-        <h2 id="plan-h" className="text-[23px] font-bold">{inProgress ? "Your journey" : "Where to?"}</h2>
-        {inProgress ? (
-          <Link href="/journey" className="mt-3 block">
-            <StationSign id={journey.plan.to}>
-              <p className="mt-1 text-[14px] text-white/75">
-                From {STATION[journey.plan.from].name}. {STAGE_LABEL[journey.stage]}.
-              </p>
-              <span className="mt-3 inline-flex h-10 items-center gap-1 rounded-full bg-paper px-4 text-[14px] font-bold text-ink">
-                Continue journey <ChevronRight size={16} aria-hidden />
-              </span>
-            </StationSign>
+          <span className="flex-1" />
+          {/* In demo mode the gold strip already carries the Guide button. */}
+          {!demo && <GuideButton label="Tips" className="pointer-events-auto h-11 rounded-full bg-card px-3.5 text-[13.5px] text-forest shadow-card" />}
+          <Link href="/passport" data-tour="level-chip" aria-label={`Level ${level.level}, ${total} XP. Open passport`} className="pointer-events-auto flex h-11 items-center gap-2 rounded-full bg-forest pl-1.5 pr-3.5 text-paper shadow-card">
+            <span className="grid size-8 place-items-center rounded-full border-2 border-gold bg-paper font-display text-[15px] font-bold leading-none text-forest">{level.level}</span>
+            <span className="text-[13.5px] font-semibold tabular-nums">{total} XP</span>
           </Link>
-        ) : (
-          <div className="mt-3 overflow-hidden rounded-3xl border border-line bg-card shadow-card">
-            <div className="relative divide-y divide-line">
-              <StationSelect label="From" value={from} onChange={(v) => (setFrom(v), setPlanError(""))} />
-              <StationSelect label="To" value={to} onChange={(v) => (setTo(v), setPlanError(""))} />
-              <button
-                onClick={() => (setFrom(to), setTo(from))}
-                aria-label="Swap origin and destination"
-                className="absolute right-12 top-1/2 z-10 grid size-9 -translate-y-1/2 place-items-center rounded-full border border-line bg-card text-ink-soft"
-              >
-                <ArrowUpDown size={16} />
-              </button>
-            </div>
-            <div className="border-t border-line p-3">
-              <Button className="w-full" onClick={plan}>Find route</Button>
-              {planError && <p role="alert" className="mt-2 text-center text-[13.5px] font-semibold text-t-red">{planError}</p>}
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Nearby station + arrivals */}
-      <section className="mt-7 px-5" aria-labelledby="near-h">
-        <div className="flex items-end justify-between">
-          <h2 id="near-h" className="text-[23px] font-bold">{near ? "Nearest station" : "Departures"}</h2>
-          {!demo && !where.at && (
-            <button onClick={requestLocation} disabled={geoStatus === "asking"} className="flex h-9 items-center gap-1.5 text-[14px] font-semibold text-forest">
-              <LocateFixed size={15} aria-hidden /> {geoStatus === "asking" ? "Locating…" : "Use my location"}
+        </div>
+        <div className="pointer-events-auto -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Show on map" data-tour="map-filters">
+          {FILTERS.map((f) => (
+            <button key={f.id} onClick={() => setFilter(f.id)} aria-pressed={filter === f.id} className={cx(pill, filter === f.id ? "bg-forest text-paper" : "bg-card text-ink")}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {demo ? (
+            <span className={cx(pill, "pointer-events-auto bg-gold-soft text-[#6a4b0c]")}>
+              <LocateFixed size={15} aria-hidden /> Demo position
+            </span>
+          ) : (
+            <button onClick={requestLocation} disabled={geoStatus === "asking"} className={cx(pill, "pointer-events-auto bg-card text-ink disabled:opacity-60")}>
+              <LocateFixed size={15} aria-hidden />
+              {geoStatus === "asking" ? "Locating" : geoStatus === "granted" ? "Update my location" : geoStatus === "idle" ? "Use my location" : "Try location again"}
             </button>
           )}
-        </div>
-        {!demo && (geoStatus === "denied" || geoStatus === "unavailable") && (
-          <p className="mt-1 text-[13px] text-ink-soft">
-            {geoStatus === "denied" ? "Location is blocked for this site." : "Could not get a location fix."} Showing your “From” station instead.
-          </p>
-        )}
-        <StationSign id={stationId} className="mt-3">
-          <p className="mt-1 text-[14px] text-white/75">
-            {near
-              ? `${formatDistance(near.km)} away, about ${walkMinutes(near.km)} min on foot${where.source === "simulated" ? " (demo position)" : ""}`
-              : STATION[stationId].routes.map(routeLabel).slice(0, 3).join(", ")}
-          </p>
-        </StationSign>
-        <Arrivals stationId={stationId} demo={demo} className="mt-3 px-1" />
-
-        {alerts.state === "live" && alerts.data.length > 0 && (
-          <button onClick={() => setAlertsOpen(true)} className="mt-3 flex w-full items-center gap-3 rounded-2xl bg-gold-soft px-3.5 py-3 text-left text-[#5b410b]">
-            <TriangleAlert size={18} className="shrink-0" aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-bold">{alerts.data.length} live service alert{alerts.data.length > 1 ? "s" : ""}</span>
-              <span className="block truncate text-[13px]">{alerts.data[0].header}</span>
-            </span>
-            <ChevronRight size={16} className="shrink-0" aria-hidden />
+          <button
+            onClick={() => {
+              setWalkOn(!walkOn);
+              setWalkSheet(!walkOn);
+            }}
+            aria-pressed={walkOn}
+            data-tour="map-walk"
+            className={cx(pill, "pointer-events-auto", walkOn ? "bg-forest text-paper" : "bg-card text-ink")}
+          >
+            <Footprints size={15} aria-hidden /> {walkOn ? "Hide walk" : "Suggested walk"}
           </button>
+        </div>
+        {!demo && locationHelp && (
+          <p role="status" className="pointer-events-auto rounded-2xl bg-card px-3.5 py-2.5 text-[13.5px] text-ink-soft shadow-card">
+            {locationHelp}
+          </p>
         )}
-      </section>
+      </div>
 
-      {/* Guess Boston */}
-      <section className="mt-7 px-5" aria-labelledby="guess-h">
-        <Link href="/play" className="relative block overflow-hidden rounded-3xl bg-ink text-paper">
-          <Photo id="nbh-beacon-hill" credit={false} className="h-[150px] opacity-60" />
-          <div className="absolute inset-x-0 top-0 p-4">
-            <h2 id="guess-h" className="text-[26px] font-bold leading-tight">Guess Boston</h2>
-            <p className="mt-0.5 max-w-[24ch] text-[14px] text-paper/85">Name the place in the photo. Gemini understands however you say it.</p>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-[13.5px] text-paper/75">
-              {d.stats.rounds ? `Best ${d.stats.bestScore} pts, ${Math.round(d.stats.accuracy * 100)}% correct` : "A round takes about a minute"}
-            </span>
-            <span className="inline-flex h-9 items-center rounded-full bg-gold px-4 text-[14px] font-bold text-forest-deep">Play a round</span>
-          </div>
+      <div data-tour="map" className="h-full w-full">
+        <CityMap className="h-full w-full" markers={markers} lines={lines} selectedId={selectedId} onSelect={select} center={center} zoom={13.6} fit={fit} />
+      </div>
+
+      {/* The two things to do from here. Sits clear of the zoom buttons and the map credit. */}
+      <div data-tour="home-actions" className="absolute bottom-[22px] left-3 right-[62px] z-10 grid grid-cols-2 gap-2">
+        <Link href={riding ? "/journey" : "/ride"} className="flex h-14 items-center justify-center gap-2 rounded-full bg-forest text-[15.5px] font-bold text-paper shadow-lift">
+          <TrainFront size={19} aria-hidden /> {riding ? "Your journey" : "Plan a ride"}
         </Link>
-      </section>
+        <Link href="/discover" className="flex h-14 items-center justify-center gap-2 rounded-full bg-gold text-[15.5px] font-bold text-forest-deep shadow-lift">
+          <Compass size={19} aria-hidden /> Explore Boston
+        </Link>
+      </div>
 
-      {/* Challenges */}
-      <section className="mt-7 px-5" aria-labelledby="chal-h">
-        <div className="flex items-end justify-between">
-          <h2 id="chal-h" className="text-[23px] font-bold">Active challenges</h2>
-          <Link href="/play#challenges" className="flex h-9 items-center text-[14px] font-semibold text-forest">All challenges</Link>
-        </div>
-        {active.length ? (
-          <ul className="mt-2 divide-y divide-line">
-            {active.slice(0, 3).map((c) => {
-              const have = challengeProgress(c, challenges[c.id], events);
-              return (
-                <li key={c.id} className="flex items-center gap-3.5 py-3">
-                  <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-moss text-forest"><NamedIcon name={c.icon} size={21} /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[15.5px] font-bold">{c.title}</span>
-                      <span className="shrink-0 text-[13px] font-semibold text-gold">+{c.xp} XP</span>
+      <Sheet open={walkSheet} onClose={() => setWalkSheet(false)} title="Suggested walk" scrim={false}>
+        {walk.steps.length ? (
+          <>
+            <p className="text-[14.5px] text-ink-soft">
+              {walk.steps.length === 1 ? "The nearest landmark" : `The ${walk.steps.length} nearest landmarks`} you have not verified, from{" "}
+              {at ? "where you are" : "Park Street"}. About {walk.minutes} min on foot, estimated from straight-line distance.
+            </p>
+            <ol className="mt-3">
+              {walk.steps.map((s, i) => (
+                <li key={s.place.id}>
+                  <button onClick={() => select(s.place.id)} className="flex w-full items-center gap-3 border-t border-line py-3 text-left">
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-forest text-[13px] font-bold text-paper">{i + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[16px] font-semibold">{s.place.name}</span>
+                      <span className="block text-[13.5px] text-ink-soft">
+                        {s.minutes} min walk, {formatDistance(s.km)} {i ? "from the last stop" : "to start"}
+                      </span>
                     </span>
-                    <Meter value={have / c.goal} className="mt-1.5" />
-                    <span className="mt-1 block text-[12.5px] text-ink-soft">{have} of {c.goal}. {c.description}</span>
-                  </span>
+                  </button>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ol>
+          </>
         ) : (
-          <Empty
-            title="No challenge on the go"
-            body="Pick one up for bonus XP on things you were going to do anyway."
-            action={<Link href="/play#challenges" className="inline-flex h-10 items-center rounded-full bg-forest px-5 text-[14px] font-bold text-paper">Browse challenges</Link>}
-          />
+          <p className="pb-4 text-[15px] text-ink-soft">You have verified every landmark on the map. Nothing left to suggest.</p>
         )}
-      </section>
+      </Sheet>
 
-      {/* Recent discoveries */}
-      <section className="mt-7" aria-labelledby="recent-h">
-        <div className="flex items-end justify-between px-5">
-          <h2 id="recent-h" className="text-[23px] font-bold">Recent discoveries</h2>
-          <Link href="/passport" className="flex h-9 items-center text-[14px] font-semibold text-forest">Passport</Link>
-        </div>
-        {recent.length ? (
-          <ul className="scroll-area mt-3 flex gap-4 overflow-x-auto px-5 pb-2" style={{ overflowY: "hidden" }}>
-            {recent.map(([id]) => (
-              <li key={id} className="w-[104px] shrink-0">
-                <Link href="/passport" aria-label={STAMP[id].name}>
-                  <StampArt stamp={STAMP[id]} owned />
+      <Sheet open={!!place || !!station} onClose={() => select(null)} title={place?.name ?? station?.name} tall={!!place}>
+        {place && (() => {
+          const near = stationFor(place);
+          const found = d.landmarks.get(place.id);
+          const walkMin = walkMinutes(distanceKm(place, near));
+          return (
+            <>
+              <p className="text-[14px] text-ink-soft">
+                Historic landmark in {place.neighborhood}
+                {place.year ? `, ${place.year}` : ""}
+              </p>
+              <Photo id={place.id} alt={place.name} className="mt-3 h-44 rounded-2xl" />
+              <p className="mt-3 text-[15px] leading-relaxed">{place.summary}</p>
+              <dl className="mt-3">
+                <Fact label="Status">{found ? `Verified ${shortDate(found.at)}` : "Not discovered yet"}</Fact>
+                {at && <Fact label={source === "simulated" ? "From demo position" : "From you"}>{formatDistance(distanceKm(at, place))}</Fact>}
+                <Fact label="Nearest station">
+                  <span className="block">{near.name}, {walkMin} min walk</span>
+                  <span className="mt-1 block"><LineTags lines={near.lines} /></span>
+                </Fact>
+              </dl>
+              <Collectible stampId={`landmark:${place.id}`} owned={!!found} />
+              {note && <p role="status" className="mt-3 rounded-2xl bg-moss px-3.5 py-2.5 text-[14px] text-forest-deep">{note}</p>}
+              <div className="mt-4 space-y-2.5 pb-2">
+                <Link href="/scan" className={cx(linkButton, "bg-forest text-paper shadow-lift")}>
+                  <ScanLine size={18} aria-hidden /> Scan this landmark
                 </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="mt-2 px-5">
-            <Empty title="Your first stamp is one stop away" body="Ride a guided journey and every station you pass is stamped into your passport." />
-          </div>
-        )}
-      </section>
-
-      {/* Saved places */}
-      {saved.length > 0 && (
-        <section className="mt-6 px-5" aria-labelledby="saved-h">
-          <h2 id="saved-h" className="text-[23px] font-bold">Saved places</h2>
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {saved.map((id) => (
-              <li key={id}>
-                <Link href="/explore" className={cx("inline-flex h-10 items-center gap-2 rounded-full border border-line bg-card px-4 text-[14px] font-semibold")}>
-                  {STATION[id] ? <LinePill route={STATION[id].routes[0]} className="!h-5 !px-2 !text-[11px]" /> : null}
-                  {STATION[id]?.name ?? PLACE[id]?.name ?? id}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <Sheet open={alertsOpen} onClose={() => setAlertsOpen(false)} title="Service alerts">
-        <p className="mb-3 text-[13px] text-ink-soft">Live from the MBTA. Subway and light rail only.</p>
-        <ul className="divide-y divide-line">
-          {alerts.data.map((a) => (
-            <li key={a.id} className="py-3">
-              <div className="mb-1.5 flex flex-wrap gap-1.5">
-                {a.routes.slice(0, 5).map((r) => <LinePill key={r} route={r} />)}
+                {tripAction("Directions", near.id, `You are already at ${near.name}, the nearest station. It is about ${walkMin} min on foot from there.`)}
+                {saveButton(place.id)}
               </div>
-              <p className="text-[14.5px] leading-snug">{a.header}</p>
-            </li>
-          ))}
-        </ul>
+            </>
+          );
+        })()}
+        {station && (() => {
+          const visit = d.stations.get(station.id);
+          const nearby = landmarksNearStation(station.id).slice(0, 4);
+          return (
+            <>
+              <StationSign id={station.id}>
+                <p className="mt-0.5 text-[13.5px] text-white/70">
+                  MBTA station in {station.municipality}
+                  {station.accessible ? ", step-free access" : ""}
+                </p>
+              </StationSign>
+              <dl className="mt-3">
+                <Fact label="Lines"><LineTags lines={station.lines} /></Fact>
+                <Fact label="Status">{visit ? `Collected ${shortDate(visit.at)}` : "Not collected yet"}</Fact>
+                {at && <Fact label={source === "simulated" ? "From demo position" : "From you"}>{formatDistance(distanceKm(at, station))}</Fact>}
+                {nearby.length > 0 && (
+                  <Fact label="Landmarks nearby">
+                    {nearby.map((n) => (
+                      <button key={n.place.id} onClick={() => select(n.place.id)} className="block w-full text-right text-forest underline underline-offset-2">
+                        {n.place.name}
+                      </button>
+                    ))}
+                  </Fact>
+                )}
+              </dl>
+              <Collectible stampId={`station:${station.id}`} owned={!!visit} />
+              {note && <p role="status" className="mt-3 rounded-2xl bg-moss px-3.5 py-2.5 text-[14px] text-forest-deep">{note}</p>}
+              <div className="mt-4 space-y-2.5 pb-2">
+                {tripAction("Plan a trip here", station.id, "You are already at this station.")}
+                {saveButton(station.id)}
+              </div>
+            </>
+          );
+        })()}
       </Sheet>
     </div>
   );

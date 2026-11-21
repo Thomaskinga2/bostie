@@ -143,7 +143,7 @@ export function Journal({ d }: { d: Derived }) {
             title="The first page is blank"
             body="Take a guided journey or scan a landmark and it is written here."
             action={
-              <Link href="/" className={linkButton}>
+              <Link href="/ride" className={linkButton}>
                 Plan a journey
               </Link>
             }
@@ -196,7 +196,7 @@ export function Saved() {
       <div id="saved-title" className="flex items-end justify-between gap-3">
         <SectionTitle title="Saved places" />
         {saved.length > 0 && (
-          <Link href="/explore" className="pb-1 text-[14.5px] font-semibold text-forest underline underline-offset-2">
+          <Link href="/" className="pb-1 text-[14.5px] font-semibold text-forest underline underline-offset-2">
             See on map
           </Link>
         )}
@@ -207,7 +207,7 @@ export function Saved() {
             title="Nothing saved yet"
             body="Save a station or landmark from the map to keep it for a later trip."
             action={
-              <Link href="/explore" className={linkButton}>
+              <Link href="/" className={linkButton}>
                 Open the map
               </Link>
             }
@@ -249,7 +249,7 @@ export function Settings() {
   const [confirming, setConfirming] = useState(false);
 
   return (
-    <section className="mt-10 border-t border-line bg-sand/50 px-5 pb-10 pt-6" aria-labelledby="settings-title">
+    <section className="mt-10 border-t border-line bg-sand/50 px-5 pb-10 pt-6" aria-labelledby="settings-title" data-tour="passport-settings">
       <h2 id="settings-title" className="text-[20px] font-bold">
         Settings
       </h2>

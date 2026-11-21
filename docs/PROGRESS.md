@@ -22,6 +22,18 @@ Status as of 2026-11-21. Priorities follow the build brief (P0 required, P1 afte
 
 Saved places, service alerts, journey and discovery history, achievement badges, streaks, rarities, line progress, statistics, completed-challenge tracking, suggested walk: done.
 
+## Added after the first build
+
+| Feature | State | Verified by |
+| --- | --- | --- |
+| On-screen guide: per-screen feature highlights, driven by `src/lib/guide.ts` | Done | Demo flow test shows every highlight; logic test checks every target is tagged |
+| Animated opening: platform scene, train-door transition, name step | Done | Demo flow test, screenshots |
+| Map-first home with Plan a ride and Explore Boston; tabs Map, Ride, Discover, Passport | Done | Navigation test |
+| Demo Mode holds the judge walkthrough, next-step strip and Gemini log | Done | Navigation test (desktop) |
+| Street basemap (OpenStreetMap tiles) under the lines and markers | Done | Checked with live tiles in the browser; tests mock the tiles |
+| Explore Boston: interests and budget, destination cards, directions, save | Done (rule-based, no Gemini) | Logic tests, Explore Boston flow test |
+| MBTA fare information: fare engine, route comparison cards, fare summary, payment guidance | Done | 11 logic tests against published prices; fare checks in two flow tests |
+
 ## P2 and not built
 
 Gemini Live voice, AI-generated challenges (interface reserved: `Challenge.source`), GPS anti-cheat, daily challenge generation, historical-photo mode.

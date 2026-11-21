@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Hanken_Grotesk, Libre_Caslon_Text } from "next/font/google";
+import { Caveat, Hanken_Grotesk, Libre_Caslon_Text } from "next/font/google";
 import { AppShell } from "@/components/shell/AppShell";
 import "./globals.css";
 
 // Caslon: the face of colonial Boston printing. Hanken Grotesk: a clean signage sans.
 const caslon = Libre_Caslon_Text({ variable: "--font-caslon", subsets: ["latin"], weight: ["400", "700"], style: ["normal", "italic"] });
 const hanken = Hanken_Grotesk({ variable: "--font-hanken", subsets: ["latin"] });
+// Caveat: pencilled margin notes on the opening screens only.
+const caveat = Caveat({ variable: "--font-caveat", subsets: ["latin"], weight: ["500", "700"] });
 
 export const metadata: Metadata = {
   title: "TQuest: make every ride an adventure",
@@ -24,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${caslon.variable} ${hanken.variable} antialiased`}>
+    <html lang="en" className={`${caslon.variable} ${hanken.variable} ${caveat.variable} antialiased`}>
       <body>
         <AppShell>{children}</AppShell>
       </body>

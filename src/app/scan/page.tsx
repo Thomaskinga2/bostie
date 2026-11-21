@@ -109,7 +109,7 @@ export default function ScanPage() {
     const stamp = id ? STAMP[`landmark:${id}`] : null;
     const headline = stamp ? (duplicate ? "Already in your passport" : "Landmark verified") : res.result.status === "uncertain" ? "Not sure yet" : res.result.status === "recognized" ? "Could not verify" : "No landmark found";
     return (
-      <div className="scroll-area h-full px-5 pb-8 pt-4">
+      <div data-scene="scan-result" className="scroll-area h-full px-5 pb-8 pt-4">
         <div className="flex items-start gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- local data URL preview */}
           <img src={phase.preview} alt="Your photo" className="size-[92px] shrink-0 rounded-2xl object-cover" />
@@ -120,7 +120,7 @@ export default function ScanPage() {
         </div>
 
         {stamp ? (
-          <div className="mt-5 flex items-center gap-4 rounded-3xl border border-line bg-card p-4 shadow-card">
+          <div data-tour="scan-stamp" className="mt-5 flex items-center gap-4 rounded-3xl border border-line bg-card p-4 shadow-card">
             <div className="w-[92px] shrink-0"><StampArt stamp={stamp} owned /></div>
             <div className="min-w-0">
               <p className="flex items-center gap-2 text-[13.5px] font-bold" style={{ color: RARITY_INK[stamp.rarity] }}>
@@ -149,7 +149,7 @@ export default function ScanPage() {
         )}
 
         {res.result.visualEvidence.length > 0 && (
-          <section className="mt-6">
+          <section data-tour="scan-evidence" className="mt-6">
             <h2 className="text-[21px] font-bold">What Gemini saw</h2>
             <ul className="mt-2 space-y-1.5">
               {res.result.visualEvidence.map((e) => (
@@ -161,7 +161,7 @@ export default function ScanPage() {
           </section>
         )}
 
-        <section className="mt-6">
+        <section data-tour="scan-checks" className="mt-6">
           <h2 className="text-[21px] font-bold">Verification checks</h2>
           <p className="mt-0.5 text-[13.5px] text-ink-soft">Gemini recommends. These rules decide.</p>
           <ul className="mt-2 divide-y divide-line">
@@ -191,7 +191,7 @@ export default function ScanPage() {
   // ---- viewfinder -----------------------------------------------------------
   const busy = phase.name === "analyzing";
   return (
-    <div className="scroll-area flex h-full flex-col px-5 pb-6 pt-4">
+    <div data-scene="scan" className="scroll-area flex h-full flex-col px-5 pb-6 pt-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-[32px] font-bold leading-[1.05]">Scan a landmark</h1>
@@ -199,7 +199,7 @@ export default function ScanPage() {
         </div>
       </div>
 
-      <div className="relative mt-4 aspect-[4/5] max-h-[46dvh] w-full shrink-0 overflow-hidden rounded-[28px] bg-ink">
+      <div data-tour="viewfinder" className="relative mt-4 aspect-[4/5] max-h-[46dvh] w-full shrink-0 overflow-hidden rounded-[28px] bg-ink">
         <video ref={video} playsInline muted className={cx("size-full object-cover", camera !== "on" && "hidden")} />
         {(busy || phase.name === "error") && phase.preview && (
           // eslint-disable-next-line @next/next/no-img-element -- local preview
@@ -242,7 +242,7 @@ export default function ScanPage() {
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-6">
+      <div data-tour="scan-controls" className="mt-4 flex items-center justify-center gap-6">
         <button
           onClick={() => file.current?.click()}
           disabled={busy}
@@ -279,7 +279,7 @@ export default function ScanPage() {
         />
       </div>
 
-      <section className="mt-6">
+      <section data-tour="scan-samples" className="mt-6">
         <h2 className="text-[20px] font-bold">{demo ? "Not in Boston? Use a sample photo" : "Try it with a sample photo"}</h2>
         <p className="mt-0.5 text-[13.5px] text-ink-soft">Real Wikimedia Commons photos of landmarks near {where.source ? "you" : "downtown"}. The Gemini call is live.</p>
         <ul className="mt-3 grid grid-cols-4 gap-2.5">

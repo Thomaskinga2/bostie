@@ -30,6 +30,18 @@ function simulated(stationId: string, now: number, only?: { route: string; direc
   return rows.sort((a, b) => a.minutes - b.minutes);
 }
 
+/** Minutes until the next departure on one route and direction, and where that number comes from. */
+export function useNextDeparture(stationId: string, only: { route: string; direction: number }, demo: boolean): { minutes: number; kind: "live" | "simulated" } | null {
+  const now = useNow();
+  const live = usePredictions(demo ? null : stationId);
+  if (demo) {
+    const next = simulated(stationId, now, only)[0];
+    return next ? { minutes: next.minutes, kind: "simulated" } : null;
+  }
+  const next = live.data.find((p) => p.route === only.route && p.direction === only.direction);
+  return next ? { minutes: minutesUntil(next.at, now), kind: "live" } : null;
+}
+
 export function Arrivals({
   stationId, demo, only, limit = 4, className,
 }: { stationId: string; demo: boolean; only?: { route: string; direction: number }; limit?: number; className?: string }) {
@@ -43,7 +55,7 @@ export function Arrivals({
         .map((p) => ({ key: p.id, route: p.route, headsign: p.headsign, minutes: minutesUntil(p.at, now), at: p.at }));
 
   return (
-    <div className={className}>
+    <div className={className} data-tour="departures">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-[14px] font-semibold text-ink-soft">Next departures</p>
         {demo ? <SourceBadge kind="simulated" /> : live.state === "unavailable" ? <SourceBadge kind="offline" /> : <SourceBadge kind="live" />}

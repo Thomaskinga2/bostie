@@ -1,15 +1,15 @@
 "use client";
-import { BookMarked, Compass, Gamepad2, House, ScanLine } from "lucide-react";
+import { BookMarked, Compass, Map, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cx } from "../ui";
 
+// Four places. Scanning and Guess Boston are optional quests, reached from Discover.
 const TABS = [
-  { href: "/", label: "Home", Icon: House },
-  { href: "/explore", label: "Explore", Icon: Compass },
-  { href: "/scan", label: "Scan", Icon: ScanLine },
-  { href: "/play", label: "Play", Icon: Gamepad2 },
-  { href: "/passport", label: "Passport", Icon: BookMarked },
+  { href: "/", label: "Map", Icon: Map, also: [] as string[] },
+  { href: "/ride", label: "Ride", Icon: TrainFront, also: ["/journey"] },
+  { href: "/discover", label: "Discover", Icon: Compass, also: ["/scan", "/play"] },
+  { href: "/passport", label: "Passport", Icon: BookMarked, also: [] },
 ];
 
 export function TabBar() {
@@ -17,27 +17,23 @@ export function TabBar() {
   return (
     <nav
       aria-label="Main"
+      data-tour="tabs"
       className="relative z-30 shrink-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur framed:pb-[18px]"
     >
-      <ul className="flex h-[66px] items-stretch px-2">
-        {TABS.map(({ href, label, Icon }) => {
-          const active = href === "/" ? pathname === "/" || pathname === "/journey" : pathname.startsWith(href);
-          const scan = href === "/scan";
+      <ul className="flex h-[62px] items-stretch px-2">
+        {TABS.map(({ href, label, Icon, also }) => {
+          const active = href === "/" ? pathname === "/" : [href, ...also].some((p) => pathname.startsWith(p));
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={cx("flex h-full flex-col items-center justify-end gap-[3px] pb-2 text-[11px] font-semibold", active ? "text-forest" : "text-ink-faint")}
+                className={cx("flex h-full flex-col items-center justify-center gap-1 text-[11.5px] font-semibold", active ? "text-forest" : "text-ink-faint")}
               >
-                {scan ? (
-                  <span className={cx("grid size-[42px] place-items-center rounded-full text-paper shadow-lift transition", active ? "bg-forest-deep" : "bg-forest")}>
-                    <Icon size={22} strokeWidth={2.3} aria-hidden />
-                  </span>
-                ) : (
-                  <Icon size={23} strokeWidth={active ? 2.4 : 1.9} aria-hidden />
-                )}
-                <span>{label}</span>
+                <span className={cx("grid h-8 w-14 place-items-center rounded-full transition", active && "bg-moss")}>
+                  <Icon size={22} strokeWidth={active ? 2.4 : 1.9} aria-hidden />
+                </span>
+                {label}
               </Link>
             </li>
           );
