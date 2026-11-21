@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 5;
+export const GUIDE_VERSION = 7;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -41,11 +41,13 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "tabs", title: "Four places to go", body: "The map, ride planning, things to discover, and your passport of stamps." },
   ],
   ride: [
-    { target: "planner", title: "Plan a trip", body: "Pick any two stations on the T, then tap “Find route” for the line, the changes and the time." },
+    { target: "ride-search", title: "Where to?", body: "Type a station, a line or a landmark and pick from the suggestions. Your starting station is shown underneath; the arrows button changes it." },
+    { target: "ride-shortcuts", title: "Shortcuts", body: "Pick a station on the map, or set home and work once for one-tap trips. Live service alerts are here too." },
+    { target: "ride-recents", title: "Recent and popular", body: "Tap a station to plan a ride there. The dots menu sets it as home or work, or saves it." },
     { target: "departures", title: "Next departures", body: "The badge says where the times come from: “Live MBTA”, or “Demo data” when they are simulated." },
   ],
   discover: [
-    { target: "discover-prefs", title: "Tell us what you like", body: "Choose where you start, what you are into and a budget. The list updates as you tap." },
+    { target: "discover-prefs", title: "Tell us what you like", body: "Type where you start, then pick what you are into and a budget. The list updates as you go." },
     { target: "discover-results", title: "Places picked for you", body: "Each card shows the nearest station, the travel time and why it fits. “Get directions” starts the trip." },
     { target: "discover-quests", title: "Optional quests", body: "Scan a landmark for a stamp, or play Guess Boston. Neither is needed to ride or explore." },
   ],
@@ -111,12 +113,12 @@ export type GuideStep = {
   hint: string;
   /** Where tapping the strip leads. */
   href: string;
-  /** Exact labels of the buttons this step needs, in tap order. The demo test taps these. */
+  /** Exact accessible names of the buttons this step needs, in tap order. The demo test taps these. */
   controls: string[];
 };
 
 export const GUIDE_STEPS: GuideStep[] = [
-  { id: "plan", title: "Plan Harvard to Park Street", hint: "On Ride, the trip is prefilled. Tap “Find route”.", href: "/ride", controls: ["Find route"] },
+  { id: "plan", title: "Plan Harvard to Park Street", hint: "On Ride, tap “Park Street” to plan the trip from Harvard.", href: "/ride", controls: ["Go to Park Street"] },
   { id: "begin", title: "Check the route and begin", hint: "Check the route and the fare, then start the journey.", href: "/journey", controls: ["Start journey", "I am at the station"] },
   { id: "play", title: "Play Guess Boston while you wait", hint: "Describe the photo in your own words. Gemini judges it.", href: "/play", controls: ["Start round"] },
   { id: "ride", title: "Ride four stops on the Red Line", hint: "Confirm each arrival to collect station stamps.", href: "/journey", controls: ["My train is here", "I am on board"] },

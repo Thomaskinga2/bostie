@@ -109,8 +109,12 @@ function Spotlight({ scene, spots }: { scene: string; spots: Spot[] }) {
           className={cx("absolute size-4 rotate-45 bg-card", below ? "-top-2" : "-bottom-2")}
           style={{ left: caretX }}
         />
-        <h2 className="text-[19px] font-bold leading-tight">{spot.title}</h2>
-        <p className="mt-1.5 text-[15px] leading-snug text-ink-soft">{spot.body}</p>
+        <div className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element -- small local asset */}
+          <img src="/mascot-face.png" alt="" width={36} height={36} className="size-9 shrink-0 rounded-[30%] bg-paper object-cover" />
+          <h2 className="text-[19px] font-bold leading-tight">{spot.title}</h2>
+        </div>
+        <p className="mt-2 text-[15px] leading-snug text-ink-soft">{spot.body}</p>
         <div className="mt-3.5 flex items-center gap-2">
           <span className="text-[13px] font-semibold tabular-nums text-ink-faint">
             {i + 1} of {spots.length}

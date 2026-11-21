@@ -47,6 +47,10 @@ type State = Progress & {
   onboarded: boolean;
   demo: boolean;
   saved: string[];
+  /** Ride shortcuts: one-tap destinations, and the stations planned to most recently (newest first). */
+  home: string | null;
+  work: string | null;
+  recents: string[];
   journey: Journey | null;
   geo: LatLng | null;
   geoStatus: "idle" | "asking" | "granted" | "denied" | "unavailable";
@@ -61,6 +65,8 @@ type State = Progress & {
   reward: (e: GameEvent) => void;
   startChallenge: (id: string) => void;
   toggleSaved: (id: string) => void;
+  setShortcut: (kind: "home" | "work", stationId: string | null) => void;
+  removeRecent: (stationId: string) => void;
   dismissCelebration: () => void;
   logAi: (meta: AiMeta | null | undefined, output: unknown, action: string) => void;
   setShowcase: (open: boolean) => void;
@@ -98,6 +104,9 @@ export const useStore = create<State>()(
       onboarded: false,
       demo: false,
       saved: [],
+      home: null,
+      work: null,
+      recents: [],
       journey: null,
       geo: null,
       geoStatus: "idle",
@@ -131,6 +140,8 @@ export const useStore = create<State>()(
 
       toggleSaved: (id) =>
         set((s) => ({ saved: s.saved.includes(id) ? s.saved.filter((x) => x !== id) : [...s.saved, id] })),
+      setShortcut: (kind, stationId) => set(kind === "home" ? { home: stationId } : { work: stationId }),
+      removeRecent: (stationId) => set((s) => ({ recents: s.recents.filter((id) => id !== stationId) })),
       dismissCelebration: () => set((s) => ({ celebrations: s.celebrations.slice(1) })),
       logAi: (meta, output, action) => {
         if (!meta) return; // only real model calls are ever shown
@@ -147,7 +158,7 @@ export const useStore = create<State>()(
       setDemo: (demo) => set({ demo }),
       resetAll: () =>
         // Tips come back too, so the next judge gets the full guided first run.
-        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo, tipsSeen: {}, tipsOff: false })),
+        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo, tipsSeen: {}, tipsOff: false, home: null, work: null, recents: [] })),
 
       requestLocation: () => {
         if (typeof navigator === "undefined" || !navigator.geolocation) return set({ geoStatus: "unavailable" });
@@ -162,7 +173,10 @@ export const useStore = create<State>()(
       startJourney: (from, to) => {
         const plan = planRoute(from, to);
         if (!plan) return false;
-        set({ journey: { id: uid(), plan, demo: get().demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now() } });
+        set((s) => ({
+          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now() },
+          recents: [to, ...s.recents.filter((id) => id !== to)].slice(0, 6),
+        }));
         return true;
       },
 
@@ -209,7 +223,7 @@ export const useStore = create<State>()(
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({
         events: s.events, xp: s.xp, achievements: s.achievements, challenges: s.challenges, name: s.name,
-        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff,
+        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents,
       }),
     },
   ),

@@ -6,14 +6,22 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "../ui";
 
+/** Bostie the Boston terrier: the app's mascot. Full figure and a square face crop live in /public. */
+export const MASCOT = { full: "/mascot.webp", face: "/mascot-face.png", alt: "Bostie, a Boston terrier with a backpack and a transit pass" };
+
+/** The brand mark: Bostie's face on a cream tile. */
 export function Logo({ size = 44 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label="Bostie">
-      <circle cx="24" cy="24" r="22" fill="#1f4b3a" />
-      <circle cx="24" cy="24" r="17.5" fill="none" stroke="#f5efe0" strokeWidth="1" strokeDasharray="1.2 2.6" />
-      <path d="M13 15.5h22v5.2H27v16h-6v-16h-8z" fill="#f5efe0" />
-      <circle cx="35.5" cy="34" r="3.2" fill="#b8862b" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element -- small local asset, sized by the caller
+    <img
+      src={MASCOT.face}
+      alt="Bostie"
+      width={size}
+      height={size}
+      draggable={false}
+      className="shrink-0 rounded-[30%] bg-card object-cover ring-1 ring-line"
+      style={{ width: size, height: size }}
+    />
   );
 }
 
@@ -85,29 +93,39 @@ function PlatformScene() {
   );
 }
 
-/** A rider at the open doors, saying hello. */
-function HelloScene() {
+/** Bostie pops up and says hello. */
+function MascotHello() {
   return (
-    <svg viewBox="0 0 200 118" className="mx-auto w-[190px]" role="img" aria-label="A rider waving from an open train door">
-      <path d="M22 108 H178" {...pen} />
-      {/* open doorway with the light on */}
-      <rect x="62" y="20" width="56" height="88" rx="5" fill="#f3e3b8" stroke={INK} strokeWidth="2" />
-      <motion.rect x="48" y="20" width="16" height="88" rx="3" fill={FOREST} stroke={INK} strokeWidth="2" initial={{ x: 14 }} animate={{ x: 0 }} transition={{ delay: 0.2, duration: 0.5 }} />
-      <motion.rect x="116" y="20" width="16" height="88" rx="3" fill={FOREST} stroke={INK} strokeWidth="2" initial={{ x: -14 }} animate={{ x: 0 }} transition={{ delay: 0.2, duration: 0.5 }} />
-      {/* the rider */}
-      <motion.g initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6, duration: 0.35 }}>
-        <circle cx="90" cy="52" r="9" fill="#fffcf4" stroke={INK} strokeWidth="2" />
-        <path d="M90 61 V88 M90 88 l-8 20 M90 88 l8 20 M90 70 l-10 12" {...pen} />
-        <motion.path d="M90 70 l12 -11" {...pen} style={{ transformOrigin: "90px 70px" }} animate={{ rotate: [0, -24, 0, -24, 0] }} transition={{ delay: 1, duration: 1.3, repeat: Infinity, repeatDelay: 2.4 }} />
-        <path d="M86 51 h.1 M94 51 h.1" {...pen} strokeWidth="2.4" />
-        <path d="M86.5 55.5 q3.5 3 7 0" {...pen} strokeWidth="1.5" />
-      </motion.g>
-      {/* speech bubble */}
-      <motion.g style={{ transformOrigin: "128px 44px" }} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1, type: "spring", stiffness: 320, damping: 15 }}>
-        <path d="M134 14 h30 q8 0 8 8 v12 q0 8 -8 8 h-20 l-10 9 l3 -9 h-3 q-8 0 -8 -8 v-12 q0 -8 8 -8 z" fill="#fffcf4" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
-        <text x="149" y="34" textAnchor="middle" fontFamily="var(--font-hand)" fontSize="19" fontWeight="700" fill={INK}>hi!</text>
-      </motion.g>
-    </svg>
+    <div className="relative mx-auto size-[176px]">
+      <motion.div
+        className="size-full"
+        initial={{ y: 36, opacity: 0, scale: 0.86 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        transition={{ delay: 0.25, type: "spring", stiffness: 230, damping: 15 }}
+      >
+        {/* a slow, small bob so he feels alive without pulling focus from the question */}
+        <motion.img
+          src={MASCOT.full}
+          alt={MASCOT.alt}
+          draggable={false}
+          className="size-full object-contain drop-shadow-[0_6px_10px_rgb(29_35_32/0.18)]"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ delay: 1.2, duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </motion.div>
+      <motion.svg
+        viewBox="0 0 64 52"
+        className="absolute -right-7 top-0 w-[66px]"
+        aria-hidden
+        style={{ transformOrigin: "10% 90%" }}
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ delay: 0.9, type: "spring", stiffness: 320, damping: 15 }}
+      >
+        <path d="M14 3 h36 q10 0 10 10 v12 q0 10 -10 10 h-26 l-13 12 l4 -12 h-1 q-10 0 -10 -10 v-12 q0 -10 10 -10 z" fill="#fffcf4" stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+        <text x="32" y="27" textAnchor="middle" fontFamily="var(--font-hand)" fontSize="22" fontWeight="700" fill={INK}>hi!</text>
+      </motion.svg>
+    </div>
   );
 }
 
@@ -214,8 +232,20 @@ export function Welcome() {
             <PlatformScene />
           </div>
 
-          <motion.div className="space-y-2.5" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9, duration: 0.4 }}>
-            <Button size="lg" className="w-full" onClick={(e) => board(false, e)} disabled={phase !== "landing"}>
+          <motion.div className="relative space-y-2.5" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9, duration: 0.4 }}>
+            {/* Bostie peeks up from behind the button once the train is in */}
+            <div aria-hidden className="pointer-events-none absolute -top-[92px] right-3 h-[96px] w-[104px] overflow-hidden">
+              <motion.img
+                src={MASCOT.full}
+                alt=""
+                draggable={false}
+                className="w-full"
+                initial={{ y: 110 }}
+                animate={{ y: 0 }}
+                transition={{ delay: 1.9, type: "spring", stiffness: 200, damping: 16 }}
+              />
+            </div>
+            <Button size="lg" className="relative w-full" onClick={(e) => board(false, e)} disabled={phase !== "landing"}>
               Start exploring
             </Button>
             <Button variant="quiet" className="w-full" onClick={(e) => board(true, e)} disabled={phase !== "landing"}>
@@ -235,7 +265,7 @@ export function Welcome() {
           }}
         >
           <div className="my-auto w-full">
-            <HelloScene />
+            <MascotHello />
             <motion.h1
               id="name-question"
               className="mt-5 text-[32px] font-bold leading-[1.08]"

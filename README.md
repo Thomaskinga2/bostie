@@ -154,7 +154,7 @@ Open the site on a laptop and choose **Judging? Take the guided demo** (or switc
 
 All of that wording lives in one file, `src/lib/guide.ts`. A feature is linked to its highlight by a `data-tour` attribute. When the app changes, edit that file, bump `GUIDE_VERSION` (returning visitors then see the revised highlights once) and run `npm test`: the tests fail, naming the highlight, if one no longer finds its feature or a button label has changed.
 
-1. **Map**: the adventure map with your level and the two main actions. Tap **Plan a ride**: the Harvard → Park Street trip is prefilled and departures are labelled *Demo data*. Tap **Find route**.
+1. **Map**: the adventure map with your level and the two main actions. Tap **Plan a ride**: the search-first Ride screen opens with shortcuts (map, home, work, alerts), popular or recent stations, and departures labelled *Demo data*. Tap **Park Street** to plan the trip from Harvard, or type any station, line or landmark.
 2. **Route**: one Red Line leg, four stops, estimated time, and the fare ($2.40) with the ways to pay. Open **Fare breakdown and how to pay** to see the detail and the link to MBTA's fares. **Start journey**, then **I am at the station**.
 3. **Waiting**: tap **Play Guess Boston while you wait**. Type a description rather than a name. Watch the judge call appear in the Gemini panel, then read the debrief.
 4. Back to the journey (the demo strip at the top takes you there): **My train is here** stamps Harvard. Confirm Central, Kendall/MIT, Charles/MGH and Park Street. Five stamps, the Red Line Explorer badge, a few level-ups.

@@ -365,8 +365,8 @@ test("live transit: real predictions are labelled live, failures degrade honestl
   await expect(page.getByText("Demo data")).toHaveCount(0);
   await expect(page.getByText("1 live service alert")).toBeVisible();
 
-  await page.getByLabel("To station").selectOption({ label: "Aquarium" });
-  await page.getByRole("button", { name: "Find route" }).click();
+  await page.getByRole("combobox", { name: "Where to?" }).fill("aqua");
+  await page.getByRole("button", { name: "Go to Aquarium" }).click(); // picking a result plans the trip
   await expect(page.getByText(/Change at/).first()).toBeVisible();
   await expect(page.getByText("Estimated", { exact: true }).first()).toBeVisible();
   await shot(page, "16-transfer-route");
@@ -563,4 +563,96 @@ test("Replay intro shows the opening again and keeps progress", async ({ page })
   const s = await store(page);
   expect(s.name).toBe("Tester"); // a blank name keeps the old one
   expect([s.events.length, s.xp.length, s.onboarded]).toEqual([1, 1, true]);
+});
+
+test("Ride search: type, get suggestions inside the phone, and go", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  await expect(page.locator("select")).toHaveCount(0); // no native menus that could spill outside the frame
+  const search = page.getByRole("combobox", { name: "Where to?" });
+  const results = page.getByRole("listbox", { name: "Where to? results" });
+  await expect(page.getByText("From Harvard")).toBeVisible();
+
+  // Typing narrows to the best matches, and stays inside the phone.
+  await search.fill("ken");
+  await expect(results.getByRole("option")).toHaveText([/Kendall\/MIT/, /Kenmore/, /Kent Street/]);
+  const screen = (await page.locator("#screen").boundingBox())!;
+  const box = (await results.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(screen.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(screen.x + screen.width + 0.5);
+  await shot(page, "20-ride-search");
+
+  // Landmarks are destinations too: they lead to their nearest station.
+  await search.fill("fenway park");
+  await expect(results.getByRole("button", { name: "Go to Fenway Park, by Kenmore station" })).toBeVisible();
+
+  // Nonsense gets a clear message; clearing returns to the shortcuts.
+  await search.fill("zzzz");
+  await expect(results.getByText(/Nothing matches/)).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByRole("link", { name: "Choose on map" })).toBeVisible();
+
+  // Change the starting station with the arrows button.
+  await page.getByRole("button", { name: "Change starting station" }).click();
+  await page.getByRole("combobox", { name: "Starting station" }).fill("south st");
+  await page.getByRole("button", { name: "Choose South Station" }).click();
+  await expect(page.getByText("From South Station")).toBeVisible();
+
+  // Enter takes the first result and plans the trip.
+  await search.fill("kenm");
+  await search.press("Enter");
+  await expect(page).toHaveURL(/\/journey$/);
+  await expect(page.getByRole("heading", { name: "South Station to Kenmore" })).toBeVisible();
+});
+
+test("Ride shortcuts: home, work and recent stations", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  await expect(page.getByRole("heading", { name: "Popular stations" })).toBeVisible(); // nothing recent yet
+  await shot(page, "21-ride");
+
+  // Set work once, then go there in one tap.
+  await page.getByRole("button", { name: "Set work" }).click();
+  await page.getByRole("combobox", { name: "Your work station" }).fill("kenm");
+  await page.getByRole("button", { name: "Choose Kenmore" }).click();
+  expect((await store(page)).work).toBe("place-kencl");
+  await page.getByRole("button", { name: "Go to Kenmore, work" }).click();
+  await expect(page.getByRole("heading", { name: "Harvard to Kenmore" })).toBeVisible();
+
+  // The trip shows up under Recent, and its menu can make it home or remove it.
+  await page.getByRole("button", { name: "End journey" }).click();
+  await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
+  await page.getByRole("button", { name: "More for Kenmore" }).click();
+  await page.getByRole("button", { name: "Set as home" }).click();
+  await expect(page.getByRole("button", { name: "Go to Kenmore, home" })).toBeVisible();
+  await page.getByRole("button", { name: "More for Kenmore" }).click();
+  await page.getByRole("button", { name: "Remove from recent" }).click();
+  await expect(page.getByRole("heading", { name: "Popular stations" })).toBeVisible();
+  expect((await store(page)).recents).toEqual([]);
+
+  // Alerts live in the shortcuts, and the map is one tap away.
+  await page.getByRole("button", { name: /Service alerts/ }).click();
+  await expect(page.getByRole("dialog", { name: "Service alerts" }).getByText(/shuttle buses/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: "Choose on map" }).click();
+  await expect(page.getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
+});
+
+test("Explore Boston start field: type and pick", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/discover");
+  const from = page.getByRole("combobox", { name: "From station" });
+  await from.click();
+  await expect(page.getByRole("listbox", { name: "From station suggestions" }).getByRole("option")).toHaveCount(6); // popular stations first
+  await from.fill("fenw");
+  await page.getByRole("option", { name: /Fenway/ }).click();
+  await expect(from).toHaveValue("Fenway");
+  await expect(page.locator('[data-tour="discover-results"] > li').first().getByText(/from Fenway/)).toBeVisible(); // results re-rank from the new start
+  await from.fill("zzzz");
+  await expect(page.getByText(/No station matches/)).toBeVisible();
+  await from.press("Escape");
+  await expect(from).toHaveValue("Fenway");
 });

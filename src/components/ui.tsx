@@ -140,6 +140,8 @@ export function PageHeader({ title, sub, right }: { title: string; sub?: string;
 export function Empty({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
     <div className="rounded-3xl border border-dashed border-line px-5 py-7 text-center">
+      {/* eslint-disable-next-line @next/next/no-img-element -- small local asset */}
+      <img src="/mascot-face.png" alt="" width={52} height={52} className="mx-auto mb-2.5 size-[52px] rounded-[30%] object-cover" />
       <p className="font-display text-[19px] font-bold">{title}</p>
       <p className="mx-auto mt-1 max-w-[26ch] text-[14px] text-ink-soft">{body}</p>
       {action && <div className="mt-4">{action}</div>}
