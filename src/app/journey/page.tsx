@@ -1,5 +1,5 @@
 "use client";
-import { Camera, Check, ChevronLeft, CreditCard, Footprints, Gamepad2, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
+import { Bus, Camera, Check, ChevronLeft, CreditCard, ExternalLink, Footprints, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
 import type { MapLine, MapMarker } from "@/components/map/CityMap";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -7,12 +7,14 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Arrivals, useNextDeparture } from "@/components/Arrivals";
 import { FareSummary } from "@/components/FareSummary";
+import { GameList } from "@/components/GameList";
 import { Button, cx, Empty, LineDots, LinePill, SourceBadge, StationSign } from "@/components/ui";
 import { derive, STAMP } from "@/lib/gamification";
-import { useNow } from "@/lib/api";
-import { formatFare, journeyFare } from "@/lib/fares";
+import { useNow, useTransitRoutes } from "@/lib/api";
+import type { TransitRoute } from "@/lib/contracts";
+import { formatFare, journeyFare, quoteFare, type FareSegment } from "@/lib/fares";
 import { distanceKm, formatDistance, walkMinutes } from "@/lib/geo";
-import { legDirection, LINES, rideMinutes, routeLabel, routeOptions, STATION, type Leg, type Plan, type RouteOption } from "@/lib/network";
+import { legInfo, LINES, planFromStops, rideMinutes, routeOptions, signature, STATION, tripSteps, type Leg, type Plan, type RouteOption } from "@/lib/network";
 import { landmarksNearStation } from "@/lib/places";
 import { useStore, useWhere, type Journey, type Stage } from "@/lib/store";
 import { useJourneyTracking } from "@/lib/tracking";
@@ -56,41 +58,39 @@ function StripMap({ leg, at, next, collected }: { leg: Leg; at: number; next: nu
   );
 }
 
-function RouteSummary({ journey }: { journey: Journey }) {
-  const { plan } = journey;
+/** Which instruction the rider is on, for each stage of a journey. */
+function currentStep(steps: ReturnType<typeof tripSteps>, journey: Journey): number {
+  const { stage, leg } = journey;
+  const find = (kind: string, l: number) => steps.findIndex((s) => s.kind === kind && s.leg === l);
+  if (stage === "walking") return steps[0]?.kind === "walk" ? 0 : find("board", 0);
+  if (stage === "waiting" || stage === "boarding") return find("board", leg);
+  if (stage === "traveling" || stage === "arriving") return find("ride", leg);
+  if (stage === "transferring") return find("change", leg);
+  if (stage === "exploring") return steps.length - 1;
+  return -1;
+}
+
+/** The whole trip as numbered instructions. During a journey the current one is marked. */
+function Steps({ journey, walkInMin }: { journey: Journey; walkInMin: number | null }) {
+  const steps = tripSteps(journey.plan, journey.walkFrom?.minutes ?? walkInMin, journey.walkTo, journey.walkFrom?.name);
+  const now = currentStep(steps, journey);
   return (
-    <ol data-tour="route-summary" className="space-y-3">
-      {plan.legs.map((leg, i) => (
-        <li key={i} className="rounded-2xl border border-line bg-card p-4">
-          <div className="flex items-center gap-2">
-            <LinePill route={leg.route} />
-            <span className="text-[14px] text-ink-soft">toward {leg.toward}</span>
-          </div>
-          <p className="mt-2 text-[17px] font-bold leading-snug">
-            {STATION[leg.from].name} to {STATION[leg.to].name}
-          </p>
-          <p className="text-[14px] text-ink-soft">
-            {leg.stops.length - 1} stop{leg.stops.length > 2 ? "s" : ""}, about {leg.minutes} min
-          </p>
-          {i < plan.legs.length - 1 && (
-            <p className="mt-3 rounded-xl bg-sand px-3 py-2 text-[14px]">
-              Change at <strong>{STATION[leg.to].name}</strong> for the {routeLabel(plan.legs[i + 1].route)} toward {plan.legs[i + 1].toward}.
-            </p>
-          )}
-        </li>
-      ))}
-      {journey.walkTo && (
-        <li className="flex items-start gap-3 rounded-2xl border border-dashed border-line px-4 py-3.5">
-          <Footprints size={20} className="mt-0.5 shrink-0 text-forest" aria-hidden />
-          <span className="min-w-0">
-            <span className="block text-[17px] font-bold leading-snug">Walk to {journey.walkTo.name}</span>
-            <span className="block text-[14px] text-ink-soft">
-              About {journey.walkTo.minutes} min ({formatDistance(journey.walkTo.km)}) from {STATION[plan.to].name}
-              {journey.walkTo.address ? `. ${journey.walkTo.address}` : ""}
+    <ol data-tour="route-summary" aria-label="Step by step" className="overflow-hidden rounded-3xl border border-line bg-card">
+      {steps.map((s, i) => {
+        const Icon = s.kind === "walk" ? Footprints : s.kind === "change" ? Repeat : TrainFront;
+        return (
+          <li key={i} aria-current={i === now ? "step" : undefined} className={cx("flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0", i === now && "bg-moss", now >= 0 && i < now && "opacity-55")}>
+            <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full text-white" style={{ background: s.color ?? "#4d564f" }}>
+              {now >= 0 && i < now ? <Check size={14} strokeWidth={3.5} aria-hidden /> : <Icon size={15} aria-hidden />}
             </span>
-          </span>
-        </li>
-      )}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[16px] font-bold leading-snug">{s.title}</span>
+              <span className="block text-[13.5px] leading-snug text-ink-soft">{s.detail}</span>
+            </span>
+            {s.minutes !== null && <span className="shrink-0 pt-0.5 text-[13.5px] font-bold tabular-nums">{s.minutes} min</span>}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -110,7 +110,7 @@ function tripParts(plan: Plan, walkInMin: number | null, walkOut?: { minutes: nu
   if (walkInMin && walkInMin > 1) parts.push({ kind: "walk", minutes: walkInMin, label: `Walk to ${STATION[plan.from].name}` });
   plan.legs.forEach((leg, i) => {
     if (i > 0) parts.push({ kind: "change", minutes: CHANGE_MIN, label: `Change at ${STATION[leg.from].name}` });
-    parts.push({ kind: "train", minutes: leg.minutes, label: `${routeLabel(leg.route)} to ${STATION[leg.to].name}`, color: LINES[leg.line].color });
+    parts.push({ kind: "train", minutes: leg.minutes, label: `${legInfo(leg).label} to ${STATION[leg.to].name}`, color: LINES[leg.line].color });
   });
   if (walkOut) parts.push({ kind: "walk", minutes: walkOut.minutes, label: `Walk to ${walkOut.name}` });
   return parts;
@@ -151,7 +151,7 @@ function RouteCard({ option, selected, demo, walkInMin, walkOut, onChoose }: {
   const parts = tripParts(plan, walkInMin, walkOut);
   const total = parts.reduce((n, p) => n + p.minutes, 0);
   const first = plan.legs[0];
-  const next = useNextDeparture(first.from, { route: first.route, direction: legDirection(first.route, first.from, first.to) }, demo);
+  const next = useNextDeparture(first, demo);
   const changes = plan.legs.length - 1;
   const body = (
     <>
@@ -171,7 +171,7 @@ function RouteCard({ option, selected, demo, walkInMin, walkOut, onChoose }: {
         <LineDots lines={[...new Set(plan.legs.map((l) => l.line))]} size={11} />
         {next ? (
           <span>
-            Next train {next.minutes <= 0 ? "now" : `in ${next.minutes} min`} ({next.kind === "live" ? "live" : "demo data"})
+            Next train {next.minutes <= 0 ? "now" : `in ${next.minutes} min`} ({next.kind === "live" ? "live" : next.kind === "scheduled" ? "scheduled" : "demo data"})
           </span>
         ) : (
           <span>Next train time unavailable</span>
@@ -187,11 +187,81 @@ function RouteCard({ option, selected, demo, walkInMin, walkOut, onChoose }: {
   );
 }
 
+const RAIL = ["SUBWAY", "TRAM", "METRO_RAIL", "LIGHT_RAIL"];
+type Ride = Extract<TransitRoute["steps"][number], { kind: "transit" }>;
+const rides = (r: TransitRoute) => r.steps.filter((s): s is Ride => s.kind === "transit");
+
+/** A Google route as a plan Bostie can guide, or null when it uses a bus, Commuter Rail or other stations. */
+const guidable = (r: TransitRoute, from: string, to: string): Plan | null => {
+  if (!rides(r).every((s) => RAIL.includes(s.vehicle))) return null;
+  const plan = planFromStops(rides(r));
+  return plan && plan.from === from && plan.to === to ? plan : null;
+};
+
+/** Fare for a Google route from the published MBTA prices; "Unavailable" when the data is not there (Commuter Rail zones, ferries). */
+function googleFare(r: TransitRoute) {
+  const segments: FareSegment[] = rides(r).map((s) => {
+    const label = `${s.line}${s.headsign ? ` toward ${s.headsign}` : ""}`;
+    if (RAIL.includes(s.vehicle) || /^SL[123]\b/.test(s.line)) return { mode: "subway", label };
+    if (s.vehicle.includes("BUS")) return { mode: "bus", label };
+    if (s.vehicle === "FERRY") return { mode: "ferry", service: "unknown", label };
+    return { mode: "commuter_rail", fromZone: "?", toZone: "?", label };
+  });
+  return quoteFare(segments, "adult", "tap", r.minutes);
+}
+
+/** A route Google found that Bostie cannot guide (it uses a bus or Commuter Rail): steps only. */
+function GoogleCard({ route, mapsUrl }: { route: TransitRoute; mapsUrl: string }) {
+  const fare = googleFare(route);
+  return (
+    <div className="rounded-2xl border border-dashed border-line bg-card p-3.5" data-testid="google-route">
+      <div className="flex items-center justify-between gap-3">
+        <span className="rounded-full bg-sand px-2.5 py-1 text-[12px] font-bold leading-none text-ink-soft">From Google</span>
+        <span className="font-display text-[22px] font-bold leading-none text-forest">{fare.status === "estimate" ? "about " : ""}{formatFare(fare.totalCents)}</span>
+      </div>
+      <p className="mt-2 text-[22px] font-bold leading-none">{route.minutes} min</p>
+      <ol className="mt-2.5 space-y-1.5">
+        {route.steps.map((s, i) => (
+          <li key={i} className="flex items-start gap-2 text-[13.5px] leading-snug">
+            {s.kind === "walk" ? <Footprints size={15} className="mt-0.5 shrink-0 text-ink-soft" aria-hidden /> : s.vehicle.includes("BUS") ? <Bus size={15} className="mt-0.5 shrink-0" style={{ color: s.color ?? undefined }} aria-hidden /> : <TrainFront size={15} className="mt-0.5 shrink-0" style={{ color: s.color ?? undefined }} aria-hidden />}
+            <span className="min-w-0 flex-1">
+              {s.kind === "walk" ? "Walk" : (
+                <>
+                  <strong>{s.line}</strong>{s.headsign ? ` toward ${s.headsign}` : ""}: {s.from.name} to {s.to.name}{s.stops ? `, ${s.stops} stop${s.stops > 1 ? "s" : ""}` : ""}
+                </>
+              )}
+            </span>
+            <span className="shrink-0 font-bold tabular-nums">{s.minutes} min</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2.5 border-t border-line pt-2.5 text-[13px] leading-snug text-ink-soft">
+        Bostie guides and stamps subway trips only, so this one is for information.{" "}
+        <a href={mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-forest underline underline-offset-2">
+          Open in Google Maps <ExternalLink size={13} aria-hidden />
+        </a>
+      </p>
+    </div>
+  );
+}
+
 /** The route comparison: every sensible way to make the trip, sortable by time or cost. */
-function RouteOptions({ plan, demo, walkInMin, walkOut }: { plan: Plan; demo: boolean; walkInMin: number | null; walkOut?: { minutes: number; name: string } }) {
+function RouteOptions({ plan, demo, walkInMin, walkOut, dest }: { plan: Plan; demo: boolean; walkInMin: number | null; walkOut?: { minutes: number; name: string }; dest: { lat: number; lng: number } }) {
   const choosePlan = useStore((s) => s.choosePlan);
   const [sort, setSort] = useState<"time" | "cost">("time");
-  const options = useMemo(() => routeOptions(plan.from, plan.to), [plan.from, plan.to]);
+  const origin = STATION[plan.from];
+  const google = useTransitRoutes({ lat: origin.lat, lng: origin.lng }, dest);
+  const { options, extra } = useMemo(() => {
+    const options = routeOptions(plan.from, plan.to);
+    const extra: TransitRoute[] = [];
+    for (const r of google) {
+      const p = guidable(r, plan.from, plan.to);
+      if (!p) extra.push(r);
+      else if (!options.some((o) => signature(o.plan) === signature(p))) options.push({ plan: p, tag: "From Google" });
+    }
+    return { options, extra: extra.slice(0, 3) };
+  }, [plan.from, plan.to, google]);
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}&travelmode=transit`;
   const cost = (o: RouteOption) => journeyFare(o.plan).totalCents ?? Infinity;
   const sorted = [...options].sort((a, b) => (sort === "cost" ? cost(a) - cost(b) : 0) || a.plan.minutes - b.plan.minutes);
   const many = options.length > 1;
@@ -217,6 +287,12 @@ function RouteOptions({ plan, demo, walkInMin, walkOut }: { plan: Plan; demo: bo
       {many && sort === "cost" && new Set(options.map(cost)).size === 1 && (
         <p className="mt-2 text-[13px] text-ink-soft">Every subway route costs the same: one fare covers changes between lines.</p>
       )}
+      {extra.length > 0 && (
+        <div className="mt-3 space-y-2" role="group" aria-label="Other routes from Google">
+          <p className="text-[14px] font-semibold text-ink-soft">Other ways, by bus or Commuter Rail</p>
+          {extra.map((r, i) => <GoogleCard key={i} route={r} mapsUrl={mapsUrl} />)}
+        </div>
+      )}
     </section>
   );
 }
@@ -230,7 +306,8 @@ function JourneyMap({ journey }: { journey: Journey }) {
   const view = useMemo(() => {
     const pt = (id: string) => ({ lat: STATION[id].lat, lng: STATION[id].lng });
     const lines: MapLine[] = plan.legs.map((l, i) => ({ id: `leg-${i}`, color: LINES[l.line].color, emphasis: true, path: l.stops.map(pt) }));
-    if (at && stage === "walking") lines.push({ id: "walk-in", color: "#1f4b3a", dashed: true, emphasis: true, path: [at, pt(leg.from)] });
+    const start = journey.walkFrom ? { lat: journey.walkFrom.lat, lng: journey.walkFrom.lng } : at;
+    if (start && (stage === "walking" || journey.walkFrom)) lines.push({ id: "walk-in", color: "#1f4b3a", dashed: true, emphasis: true, path: [start, pt(plan.from)] });
     if (walkTo) lines.push({ id: "walk-out", color: "#1f4b3a", dashed: true, emphasis: true, path: [pt(plan.to), { lat: walkTo.lat, lng: walkTo.lng }] });
 
     const reached = (legIndex: number, stopIndex: number) =>
@@ -240,6 +317,7 @@ function JourneyMap({ journey }: { journey: Journey }) {
       if (!markers.some((m) => m.id === id)) markers.push({ id, kind: "station", label: STATION[id].name, color: LINES[l.line].color, done: reached(li, si), ...pt(id) });
     }));
     if (walkTo) markers.push({ id: "destination", kind: "answer", label: walkTo.name, lat: walkTo.lat, lng: walkTo.lng });
+    if (journey.walkFrom) markers.push({ id: "origin", kind: "pin", label: journey.walkFrom.name, lat: journey.walkFrom.lat, lng: journey.walkFrom.lng });
     if (at) markers.push({ id: "user", kind: "user", label: where.source === "simulated" ? "You (demo)" : "You", lat: at.lat, lng: at.lng });
 
     // Frame what matters right now: the rider and the next thing they are heading for.
@@ -250,7 +328,7 @@ function JourneyMap({ journey }: { journey: Journey }) {
     const fit = [...(at ? [{ lat: at.lat, lng: at.lng }] : []), ...next];
     const focus = stage === "traveling" ? leg.stops[journey.stop] : stage === "walking" || stage === "waiting" || stage === "boarding" ? leg.from : walkTo ? "destination" : plan.to;
     return { lines, markers, fit, focus };
-  }, [plan, stage, walkTo, leg, journey.leg, journey.stop, at, where.source]);
+  }, [plan, stage, walkTo, leg, journey.leg, journey.stop, journey.walkFrom, at, where.source]);
 
   return (
     <section data-tour="journey-map" aria-label="Navigation map" className="relative mx-5 mt-4 h-[230px] shrink-0 overflow-hidden rounded-3xl border border-line">
@@ -346,18 +424,20 @@ export default function JourneyPage() {
       </div>
     );
 
-  const { plan, stage, demo, walkTo } = journey;
+  const { plan, stage, demo, walkTo, walkFrom } = journey;
   /** Where the trip ends: the place searched for, or the last station. */
   const goal = walkTo?.name ?? STATION[plan.to].name;
   const leg = plan.legs[journey.leg];
   const collected = new Set(d.stations.keys());
   const nextStop = leg.stops[journey.stop];
-  const direction = legDirection(leg.route, leg.from, leg.to);
-  const walkKm = where.at ? distanceKm(where.at, STATION[leg.from]) : null;
+  const info = legInfo(leg);
+  const nextLeg = plan.legs[journey.leg + 1];
+  // From a chosen address or place the walk is known; otherwise it is measured from where the rider is.
+  const walkKm = walkFrom ? walkFrom.km : where.at ? distanceKm(where.at, STATION[leg.from]) : null;
+  const walkInMin = walkKm !== null ? walkMinutes(walkKm) : null;
   const nearby = landmarksNearStation(plan.to);
   const earned = xp.filter((t) => t.at >= journey.startedAt);
   const earnedStamps = Object.entries(d.stamps).filter(([, at]) => at >= journey.startedAt);
-  const rounds = d.rounds.length;
 
   const quit = () => {
     end();
@@ -366,15 +446,15 @@ export default function JourneyPage() {
 
   // One headline, one sentence and one action per stage.
   const view: Record<Stage, { title: string; body: string; action: string }> = {
-    planning: { title: `${STATION[plan.from].name} to ${goal}`, body: `About ${plan.minutes} min on the train${plan.legs.length > 1 ? `, ${plan.legs.length - 1} change${plan.legs.length > 2 ? "s" : ""}` : ", no changes"}${walkTo ? `, then a ${walkTo.minutes} min walk from ${STATION[plan.to].name}` : ""}.`, action: "Start journey" },
-    walking: { title: `Walk to ${STATION[leg.from].name}`, body: walkKm !== null && walkKm > 0.05 ? `About ${walkMinutes(walkKm)} min on foot (${formatDistance(walkKm)}).` : "You are right by the station.", action: "I am at the station" },
-    waiting: { title: `Wait for the ${routeLabel(leg.route)}`, body: `Take any train toward ${leg.toward}.`, action: "My train is here" },
+    planning: { title: `${walkFrom?.name ?? STATION[plan.from].name} to ${goal}`, body: `About ${plan.minutes} min on the train${plan.legs.length > 1 ? `, ${plan.legs.length - 1} change${plan.legs.length > 2 ? "s" : ""}` : ", no changes"}${walkTo ? `, then a ${walkTo.minutes} min walk from ${STATION[plan.to].name}` : ""}.`, action: "Start journey" },
+    walking: { title: `Walk to ${STATION[leg.from].name}`, body: walkKm !== null && walkKm > 0.05 ? `About ${walkMinutes(walkKm)} min on foot (${formatDistance(walkKm)})${walkFrom ? ` from ${walkFrom.name}` : ""}.` : "You are right by the station.", action: "I am at the station" },
+    waiting: { title: `Wait for the ${info.label}`, body: `${info.directionName} platform. Take any train toward ${info.toward}.`, action: "My train is here" },
     boarding: { title: "Step aboard", body: `Ride ${leg.stops.length - 1} stop${leg.stops.length > 2 ? "s" : ""} to ${STATION[leg.to].name}.`, action: "I am on board" },
     traveling: { title: `Next stop: ${STATION[nextStop]?.name}`, body: `About ${Math.max(1, Math.round(rideMinutes(leg.route, leg.stops[journey.stop - 1], nextStop)))} min. There is no GPS underground, so confirm each stop as the doors open.`, action: `Arrived at ${STATION[nextStop]?.name}` },
-    transferring: { title: `Change at ${STATION[leg.to].name}`, body: plan.legs[journey.leg + 1] ? `Follow signs for the ${routeLabel(plan.legs[journey.leg + 1].route)} toward ${plan.legs[journey.leg + 1].toward}.` : "", action: "I am on the next platform" },
+    transferring: { title: `Change at ${STATION[leg.to].name}`, body: nextLeg ? `Stay inside the station and follow signs for the ${legInfo(nextLeg).label}, ${legInfo(nextLeg).directionName.toLowerCase()} toward ${legInfo(nextLeg).toward}.` : "", action: "I am on the next platform" },
     arriving: { title: `You have arrived at ${STATION[plan.to].name}`, body: walkTo ? `Take the stairs or lift up to the street. ${walkTo.name} is about ${walkTo.minutes} min on foot.` : "Mind the gap, and take the stairs or lift up to the street.", action: "Explore nearby" },
     exploring: { title: walkTo ? `Walk to ${walkTo.name}` : `Around ${STATION[plan.to].name}`, body: walkTo ? `About ${walkTo.minutes} min (${formatDistance(walkTo.km)}) from the station${walkTo.address ? `, at ${walkTo.address}` : ""}.` : nearby.length ? "History is a short walk away. Scan a landmark to unlock its stamp." : "Have a look around, then wrap up your journey.", action: "Complete journey" },
-    complete: { title: "Journey complete", body: `${STATION[plan.from].name} to ${goal}, stamped and logged.`, action: "Open passport" },
+    complete: { title: "Journey complete", body: `${walkFrom?.name ?? STATION[plan.from].name} to ${goal}, stamped and logged.`, action: "Open passport" },
   };
   const v = view[stage];
 
@@ -408,15 +488,16 @@ export default function JourneyPage() {
       <div className="flex-1 px-5 pt-5">
         {stage === "planning" && (
           <>
-            <RouteOptions plan={plan} demo={demo} walkInMin={walkKm !== null ? walkMinutes(walkKm) : null} walkOut={walkTo ? { minutes: walkTo.minutes, name: walkTo.name } : undefined} />
-            <RouteSummary journey={journey} />
+            <RouteOptions plan={plan} demo={demo} walkInMin={walkInMin} walkOut={walkTo ? { minutes: walkTo.minutes, name: walkTo.name } : undefined} dest={walkTo ? { lat: walkTo.lat, lng: walkTo.lng } : { lat: STATION[plan.to].lat, lng: STATION[plan.to].lng }} />
+            <h2 className="mb-2 text-[20px] font-bold">Step by step</h2>
+            <Steps journey={journey} walkInMin={walkInMin} />
             <p className="mt-3 text-[13px] text-ink-soft">
               Route computed from the MBTA station network. Ride times are estimates from distance, not live predictions.
             </p>
             <FareSummary plan={plan} className="mt-4" />
             <TrackingChoice journey={journey} />
             <StationSign id={plan.from} className="mt-5" />
-            <Arrivals stationId={plan.from} demo={demo} only={{ route: leg.route, direction }} limit={3} className="mt-3 px-1" />
+            <Arrivals stationId={plan.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
           </>
         )}
 
@@ -441,14 +522,8 @@ export default function JourneyPage() {
         {stage === "waiting" && (
           <>
             <StationSign id={leg.from} />
-            <Arrivals stationId={leg.from} demo={demo} only={{ route: leg.route, direction }} limit={3} className="mt-3 px-1" />
-            <Link href="/play" data-tour="play-while-waiting" className="mt-4 flex items-center gap-3.5 rounded-2xl bg-ink px-4 py-3.5 text-paper">
-              <Gamepad2 size={24} className="shrink-0 text-gold" aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[16px] font-bold">Play Guess Boston while you wait</span>
-                <span className="block text-[13.5px] text-paper/70">{rounds ? `${rounds} round${rounds > 1 ? "s" : ""} played. One more?` : "One round takes about a minute."}</span>
-              </span>
-            </Link>
+            <Arrivals stationId={leg.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
+            <GameList className="mt-5" />
             <p className="mt-3 flex items-start gap-2.5 text-[13.5px] text-ink-soft">
               <ShieldCheck size={17} className="mt-0.5 shrink-0" aria-hidden /> Stand behind the yellow line until the train has stopped.
             </p>
@@ -459,7 +534,7 @@ export default function JourneyPage() {
           <div data-tour="strip-map" className="rounded-3xl border border-line bg-card p-4 shadow-card">
             <div className="mb-3 flex items-center gap-2">
               <LinePill route={leg.route} />
-              <span className="text-[14px] text-ink-soft">toward {leg.toward}</span>
+              <span className="text-[14px] text-ink-soft">{info.directionName}, toward {info.toward}</span>
             </div>
             <StripMap
               leg={leg}
@@ -468,6 +543,15 @@ export default function JourneyPage() {
               collected={collected}
             />
           </div>
+        )}
+
+        {stage === "transferring" && nextLeg && <Arrivals stationId={nextLeg.from} demo={demo} leg={nextLeg} limit={3} className="mt-4 px-1" />}
+
+        {stage !== "planning" && stage !== "complete" && (
+          <details className="mt-4" data-testid="all-steps">
+            <summary className="cursor-pointer py-2 text-[15px] font-semibold text-forest">All steps for this trip</summary>
+            <Steps journey={journey} walkInMin={null} />
+          </details>
         )}
 
         {stage === "exploring" && (

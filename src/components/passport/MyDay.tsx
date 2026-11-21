@@ -101,7 +101,7 @@ export function MyDay({ now }: { now: number }) {
         filename={`bostie-${today}.png`}
         caption={`My day on the T with Bostie: ${recap.stations.length} stations, ${recap.landmarks.length} landmarks.`}
         warning={trailSegments(trail, today).length ? "This picture shows the exact route you travelled today, including where you started and ended." : undefined}
-        make={() => dayCard({ recap, heat: heatPoints(events, trail, today), segments: trailSegments(trail, today), rider: name, at: now })}
+        make={() => dayCard({ recap, segments: trailSegments(trail, today), rider: name, at: now })}
       />
     </section>
   );

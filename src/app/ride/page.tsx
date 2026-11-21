@@ -1,21 +1,20 @@
 "use client";
 // Ride: search-first trip planning. Type where you are going, or tap a shortcut or a
-// recent station, and the route is planned from your starting station. No quest required.
+// recent station, and the route is planned from where you start: a station, any address or place, or where you are now. No quest required.
 import {
-  ArrowUpDown, Bookmark, BookmarkCheck, BriefcaseBusiness, ChevronRight, Ellipsis, House, LocateFixed, MapPin, MapPinned,
-  Search, TrainFront, Trash2, TriangleAlert, X, type LucideIcon,
+  Bookmark, BookmarkCheck, BriefcaseBusiness, ChevronRight, Ellipsis, House, LocateFixed, MapPin, MapPinned, Navigation,
+  TrainFront, Trash2, TriangleAlert, X, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Arrivals } from "@/components/Arrivals";
 import { Sheet } from "@/components/Sheet";
 import { suggestStations } from "@/components/StationSelect";
 import { Button, cx, LinePill, StationSign } from "@/components/ui";
 import { useAlerts, usePlaceSearch } from "@/lib/api";
 import type { PlaceHit } from "@/lib/contracts";
-import { formatDistance, walkMinutes } from "@/lib/geo";
-import { bestStationFor, LINES, nearestStation, routeLabel, STATION, type Station } from "@/lib/network";
+import { bestStationFor, LINES, nearestStation, STATION, walkFor, type Station } from "@/lib/network";
+import { formatDistance } from "@/lib/geo";
 import { LANDMARKS, stationFor, type Place } from "@/lib/places";
 import { DEMO_ROUTE, useStore, useWhere } from "@/lib/store";
 
@@ -26,10 +25,11 @@ const STAGE_LABEL: Record<string, string> = {
 
 /** What the search field is choosing right now. */
 type Mode = "to" | "from" | "home" | "work";
-const PROMPT: Record<Mode, string> = { to: "Where to?", from: "Starting station", home: "Your home station", work: "Your work station" };
+const PROMPT: Record<Mode, string> = { to: "Where to?", from: "Starting point", home: "Your home station", work: "Your work station" };
 
 const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 /** Landmarks whose name or nickname contains the text: each leads to its nearest station. */
+const asHit = (p: Place): PlaceHit => ({ id: `lm:${p.id}`, name: p.name, address: p.neighborhood, lat: p.lat, lng: p.lng });
 const suggestPlaces = (text: string): Place[] => {
   const q = clean(text);
   return q.length < 2 ? [] : LANDMARKS.filter((l) => [l.name, ...l.aliases].some((a) => clean(a).includes(q))).slice(0, 3);
@@ -67,7 +67,6 @@ function ActionRow({ Icon, label, sub, muted, onClick, href, ...rest }: {
 export default function RidePage() {
   const router = useRouter();
   const journey = useStore((s) => s.journey);
-  const demo = useStore((s) => s.demo);
   const home = useStore((s) => s.home);
   const work = useStore((s) => s.work);
   const recents = useStore((s) => s.recents);
@@ -81,9 +80,13 @@ export default function RidePage() {
   const where = useWhere();
   const near = where.at ? nearestStation(where.at) : null;
 
-  /** A start the rider picked by hand; otherwise the nearest station, or Harvard. */
+  /** A start the rider picked by hand: a station, or any address or place. Otherwise where they are, or Harvard. */
   const [pickedFrom, setPickedFrom] = useState<string | null>(null);
-  const from = pickedFrom ?? near?.station.id ?? DEMO_ROUTE.from;
+  const [fromPlace, setFromPlace] = useState<PlaceHit | null>(null);
+  // ponytail: a trip from a place boards at its nearest station; choose per destination if that ever sends people the long way round.
+  const fromNear = fromPlace ? nearestStation(fromPlace) : null;
+  const from = pickedFrom ?? fromNear?.station.id ?? near?.station.id ?? DEMO_ROUTE.from;
+  const walkFrom = fromPlace && fromNear ? { name: fromPlace.name, address: fromPlace.address, lat: fromPlace.lat, lng: fromPlace.lng, km: fromNear.km, minutes: walkFor(fromNear.km) } : undefined;
   const [mode, setMode] = useState<Mode>("to");
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
@@ -93,12 +96,28 @@ export default function RidePage() {
 
   const searching = mode !== "to" || text.trim() !== "";
   const stations = searching ? suggestStations(text) : [];
-  const places = mode === "to" ? suggestPlaces(text) : [];
+  /** Home and work are stations; the start and the destination can be anywhere. */
+  const anywhere = mode === "to" || mode === "from";
+  const places = anywhere ? suggestPlaces(text) : [];
   // Anywhere else: addresses and places from the location search.
-  const search = usePlaceSearch(text, mode === "to");
-  const routed = search.places.map((hit) => ({ hit, best: bestStationFor(from, hit) })).filter((r) => r.best);
+  const search = usePlaceSearch(text, anywhere);
+  const routed = mode === "to" ? search.places.map((hit) => ({ hit, best: bestStationFor(from, hit) })).filter((r) => r.best) : [];
+  /** Places a trip can start from: those within a walk of a station. */
+  const starts = mode === "from" ? search.places.map((hit) => ({ hit, near: nearestStation(hit) })).filter((r) => r.near.km <= 2.5) : [];
   const inProgress = journey && journey.stage !== "complete";
-  const stationId = near?.station.id ?? from;
+  /** The trip starts from wherever the rider is (their nearest station) rather than a station they chose. */
+  const usingLocation = !pickedFrom && !fromPlace && !!near;
+  const startAt = (hit: PlaceHit) => {
+    setFromPlace(hit);
+    setPickedFrom(null);
+    reset();
+  };
+  const useCurrentLocation = () => {
+    setPickedFrom(null);
+    setFromPlace(null);
+    if (!where.at) requestLocation();
+    reset();
+  };
 
   const reset = () => {
     setText("");
@@ -108,8 +127,8 @@ export default function RidePage() {
   const go = (toId: string) => {
     setNote("");
     if (inProgress) return router.push("/journey");
-    if (toId === from) return setNote(`You are already at ${STATION[toId].name}. Change your starting station with the arrows button.`);
-    if (!startJourney(from, toId)) return setNote("No rail route found to that station.");
+    if (toId === from) return setNote(walkFrom ? `${STATION[toId].name} is the station nearest ${walkFrom.name}: a ${walkFrom.minutes} min walk, no train needed.` : `You are already at ${STATION[toId].name}. Tap the From field to start somewhere else.`);
+    if (!startJourney(from, toId, undefined, walkFrom)) return setNote("No rail route found to that station.");
     router.push("/journey");
   };
 
@@ -121,14 +140,16 @@ export default function RidePage() {
     if (!best) return setNote(`${hit.name} is not within walking distance of a subway station.`);
     if (!best.plan) return setNote(`${hit.name} is a ${best.walkMinutes} min walk from ${STATION[from].name}. No train needed.`);
     const walkTo = { name: hit.name, address: hit.address, lat: hit.lat, lng: hit.lng, minutes: best.walkMinutes, km: best.walkKm };
-    if (startJourney(from, best.station.id, walkTo)) router.push("/journey");
+    if (startJourney(from, best.station.id, walkTo, walkFrom)) router.push("/journey");
   };
 
   /** A station was picked from the results: what that means depends on what the field is choosing. */
   const pick = (id: string) => {
     if (mode === "to") return go(id);
-    if (mode === "from") setPickedFrom(id);
-    else setShortcut(mode, id);
+    if (mode === "from") {
+      setPickedFrom(id);
+      setFromPlace(null);
+    } else setShortcut(mode, id);
     reset();
   };
 
@@ -140,63 +161,103 @@ export default function RidePage() {
     <div data-scene="ride" className="scroll-area h-full pb-8">
       <header data-tour="ride-search" className="bg-forest px-4 pb-4 pt-3 text-paper">
         <h1 className="px-1 text-[26px] font-bold">Plan a ride</h1>
-        <div className="mt-2.5 flex items-center gap-2">
-          <label className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-paper px-4 text-ink">
-            <Search size={19} className="shrink-0 text-ink-soft" aria-hidden />
-            <input
-              role="combobox"
-              aria-label={PROMPT[mode]}
-              aria-expanded={searching}
-              aria-controls="ride-results"
-              aria-autocomplete="list"
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setNote("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && searching) {
-                  const first = stations[0]?.id ?? (places[0] ? stationFor(places[0]).id : null);
-                  if (first) pick(first);
-                  else if (routed[0]) goPlace(routed[0].hit);
-                } else if (e.key === "Escape") reset();
-              }}
-              placeholder={mode === "to" ? "Station, address or place" : "Type a station"}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="search"
-              style={{ outline: "none" }}
-              className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold placeholder:font-normal placeholder:text-ink-faint"
-            />
-            {searching && (
-              <button onClick={reset} aria-label="Clear search" className="grid size-8 shrink-0 place-items-center rounded-full text-ink-soft">
-                <X size={18} />
-              </button>
-            )}
-          </label>
-          <button
-            onClick={() => {
-              setText("");
-              setMode(mode === "from" ? "to" : "from");
-            }}
-            aria-label="Change starting station"
-            aria-pressed={mode === "from"}
-            className={cx("grid size-12 shrink-0 place-items-center rounded-full", mode === "from" ? "bg-gold text-forest-deep" : "bg-paper/15")}
-          >
-            <ArrowUpDown size={20} />
-          </button>
+        <div className="mt-2.5 flex items-stretch gap-2.5">
+          {/* Start at the top, destination at the bottom, joined like a route. */}
+          <span aria-hidden className="flex w-8 shrink-0 flex-col items-center justify-between rounded-full bg-paper/15 py-3.5">
+            <Navigation size={15} fill="currentColor" />
+            <span className="size-2.5 rounded-[3px] bg-paper" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-2">
+            {(["from", "to"] as const).map((row) => {
+              // Home and work are chosen in the destination field.
+              const active = row === "from" ? mode === "from" : mode !== "from";
+              const box = "flex h-12 w-full min-w-0 items-center gap-2.5 rounded-2xl px-3.5";
+              if (!active)
+                return (
+                  <button
+                    key={row}
+                    onClick={() => {
+                      setText("");
+                      setMode(row);
+                    }}
+                    aria-label={row === "from" ? "Change starting point" : "Choose destination"}
+                    className={cx(box, "bg-paper/12 text-left")}
+                  >
+                    <span className="w-10 shrink-0 text-[13px] font-semibold text-paper/70">{row === "from" ? "From" : "To"}</span>
+                    {row === "to" ? (
+                      <span className="truncate text-[16.5px] text-paper/70">Where to?</span>
+                    ) : usingLocation ? (
+                      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-t-green/90 px-2 py-1 text-[15px] font-bold">
+                        <span className="truncate">Current location</span>
+                      </span>
+                    ) : (
+                      <span className="truncate text-[16.5px] font-bold">{fromPlace?.name ?? STATION[from].name}</span>
+                    )}
+                  </button>
+                );
+              return (
+                <label key={row} className={cx(box, "bg-paper text-ink")}>
+                  <span className="w-10 shrink-0 text-[13px] font-semibold text-ink-faint">{row === "from" ? "From" : "To"}</span>
+                  <input
+                    role="combobox"
+                    aria-label={PROMPT[mode]}
+                    aria-expanded={searching}
+                    aria-controls="ride-results"
+                    aria-autocomplete="list"
+                    value={text}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      setNote("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && searching) {
+                        if (!text.trim()) return; // nothing typed: wait for a choice instead of guessing one
+                        const first = stations[0]?.id ?? (places[0] && mode !== "from" ? stationFor(places[0]).id : null);
+                        if (first) pick(first);
+                        else if (mode === "from" && places[0]) startAt(asHit(places[0]));
+                        else if (routed[0]) goPlace(routed[0].hit);
+                        else if (starts[0]) startAt(starts[0].hit);
+                        else setNote("Pick a station or place from the list. Bostie only plans trips to places it can find.");
+                      } else if (e.key === "Escape") reset();
+                    }}
+                    placeholder={anywhere ? "Station, address or place" : "Type a station"}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="search"
+                    style={{ outline: "none" }}
+                    className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold placeholder:font-normal placeholder:text-ink-faint"
+                  />
+                  {searching && (
+                    <button onClick={reset} aria-label="Clear search" className="grid size-8 shrink-0 place-items-center rounded-full text-ink-soft">
+                      <X size={18} />
+                    </button>
+                  )}
+                </label>
+              );
+            })}
+          </div>
         </div>
-        <p className="mt-2.5 px-1 text-[14px] text-paper/85">
-          {mode === "to" ? (
-            <>
-              From <strong className="font-bold text-paper">{STATION[from].name}</strong>
-              {!pickedFrom && near ? (where.source === "simulated" ? ", your demo position" : ", your nearest station") : ""}
-            </>
-          ) : mode === "from" ? (
+        <p className="mt-2.5 px-1 text-[14px] text-paper/85" data-testid="ride-from-note">
+          {mode === "from" ? (
             "Choose where your trip starts."
-          ) : (
+          ) : mode !== "to" ? (
             `Choose your ${mode} station for one-tap trips.`
+          ) : walkFrom ? (
+            <>
+              Starts at <strong className="font-bold text-paper">{STATION[from].name}</strong>, a {walkFrom.minutes} min walk from there.
+            </>
+          ) : usingLocation ? (
+            <>
+              Nearest station: <strong className="font-bold text-paper">{STATION[from].name}</strong>
+              {where.source === "simulated" ? " (demo position)" : ""}
+            </>
+          ) : !pickedFrom && geoStatus === "asking" ? (
+            "Finding your location…"
+          ) : !pickedFrom && (geoStatus === "denied" || geoStatus === "unavailable") ? (
+            `${geoStatus === "denied" ? "Location is blocked for this site" : "Could not find your location"}, so the trip starts at ${STATION[from].name}. Tap From to change it.`
+          ) : (
+            "Tap From to start somewhere else or use your current location."
           )}
         </p>
       </header>
@@ -206,6 +267,19 @@ export default function RidePage() {
       {searching ? (
         <section className="px-4 pt-3" aria-label="Search results">
           <ul id="ride-results" role="listbox" aria-label={`${PROMPT[mode]} results`} className="divide-y divide-line overflow-hidden rounded-2xl bg-card shadow-card">
+            {mode === "from" && (
+              <li role="option" aria-selected={usingLocation}>
+                <button onClick={useCurrentLocation} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                  <LocateFixed size={22} className="shrink-0 text-t-green" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[16.5px] font-bold">Current location</span>
+                    <span className="block text-[13.5px] leading-snug text-ink-soft">
+                      {near ? `Starts at ${near.station.name}, your nearest station${where.source === "simulated" ? " (demo position)" : ""}` : "Uses your location and starts at your nearest station"}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            )}
             {!text.trim() && <li role="presentation" className="px-4 pb-1 pt-3 text-[12.5px] font-semibold text-ink-faint">Popular stations</li>}
             {stations.map((s) => (
               <li key={s.id} role="option" aria-selected={false}>
@@ -222,7 +296,7 @@ export default function RidePage() {
               const s = stationFor(p);
               return (
                 <li key={p.id} role="option" aria-selected={false}>
-                  <button onClick={() => pick(s.id)} aria-label={`Go to ${p.name}, by ${s.name} station`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                  <button onClick={() => (mode === "from" ? startAt(asHit(p)) : pick(s.id))} aria-label={`${mode === "from" ? "Start at" : "Go to"} ${p.name}, by ${s.name} station`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
                     <MapPin size={22} className="shrink-0 text-gold" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[16.5px] font-bold">{p.name}</span>
@@ -246,19 +320,33 @@ export default function RidePage() {
                 </button>
               </li>
             ))}
-            {mode === "to" && search.state === "loading" && (
+            {starts.map(({ hit, near: n }) => (
+              <li key={hit.id} role="option" aria-selected={false}>
+                <button onClick={() => startAt(hit)} aria-label={`Start at ${hit.name}${hit.address ? `, ${hit.address}` : ""}`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                  <MapPin size={22} className="shrink-0 text-ink-soft" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[16.5px] font-bold">{hit.name}</span>
+                    {hit.address && <span className="block truncate text-[13.5px] text-ink-soft">{hit.address}</span>}
+                    <span className="block truncate text-[13.5px] font-semibold text-forest">
+                      {walkFor(n.km)} min walk ({formatDistance(n.km)}) to {n.station.name} station
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {anywhere && search.state === "loading" && (
               <li role="presentation" className="px-4 py-3.5 text-[14px] text-ink-soft">Searching addresses and places…</li>
             )}
-            {mode === "to" && search.state === "unavailable" && (
+            {anywhere && search.state === "unavailable" && (
               <li role="presentation" className="px-4 py-3.5 text-[14px] text-ink-soft">Address search is unavailable right now. Station and landmark names still work.</li>
             )}
-            {!stations.length && !places.length && !routed.length && search.state !== "loading" && search.state !== "unavailable" && (
+            {!stations.length && !places.length && !routed.length && !starts.length && search.state !== "loading" && search.state !== "unavailable" && (
               <li role="presentation" className="px-4 py-4 text-[14.5px] text-ink-soft">
-                Nothing matches “{text.trim()}”{mode === "to" && text.trim().length < 3 ? ". Keep typing to search addresses and places." : ". Try a station, an address or a place name."}
+                Nothing matches “{text.trim()}”{anywhere && text.trim().length < 3 ? ". Keep typing to search addresses and places." : ". Try a station, an address or a place name."}
               </li>
             )}
           </ul>
-          {mode === "to" && search.provider && routed.length > 0 && (
+          {search.provider && routed.length + starts.length > 0 && (
             <p className="mt-2 px-1 text-[12px] text-ink-faint">
               {search.provider === "google" ? "Places by Google." : "Places from OpenStreetMap."} Routes by Bostie from the MBTA network.
             </p>
@@ -328,30 +416,6 @@ export default function RidePage() {
                 );
               })}
             </ul>
-          </section>
-
-          <section className="mt-6 px-4" aria-labelledby="near-h">
-            <div className="flex items-end justify-between px-1">
-              <h2 id="near-h" className="text-[23px] font-bold">{near ? "Nearest station" : "Departures"}</h2>
-              {!demo && !where.at && (
-                <button onClick={requestLocation} disabled={geoStatus === "asking"} className="flex h-9 items-center gap-1.5 text-[14px] font-semibold text-forest">
-                  <LocateFixed size={15} aria-hidden /> {geoStatus === "asking" ? "Locating…" : "Use my location"}
-                </button>
-              )}
-            </div>
-            {!demo && (geoStatus === "denied" || geoStatus === "unavailable") && (
-              <p className="mt-1 px-1 text-[13px] text-ink-soft">
-                {geoStatus === "denied" ? "Location is blocked for this site." : "Could not get a location fix."} Showing your starting station instead.
-              </p>
-            )}
-            <StationSign id={stationId} className="mt-3">
-              <p className="mt-1 text-[14px] text-white/75">
-                {near
-                  ? `${formatDistance(near.km)} away, about ${walkMinutes(near.km)} min on foot${where.source === "simulated" ? " (demo position)" : ""}`
-                  : STATION[stationId].routes.map(routeLabel).slice(0, 3).join(", ")}
-              </p>
-            </StationSign>
-            <Arrivals stationId={stationId} demo={demo} className="mt-3 px-1" />
           </section>
         </>
       )}

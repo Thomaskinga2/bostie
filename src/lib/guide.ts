@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 12;
+export const GUIDE_VERSION = 15;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -41,10 +41,9 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "tabs", title: "Four places to go", body: "The map, ride planning, things to discover, and your passport of stamps." },
   ],
   ride: [
-    { target: "ride-search", title: "Where to?", body: "Type a station, an address or any place. Bostie finds the best station for it and plans the ride from your starting station, shown underneath." },
+    { target: "ride-search", title: "From and to", body: "Type a station, an address or any place in To. Tap From to start at a station, any address or place, or choose Current location to start from where you are." },
     { target: "ride-shortcuts", title: "Shortcuts", body: "Pick a station on the map, or set home and work once for one-tap trips. Live service alerts are here too." },
     { target: "ride-recents", title: "Recent and popular", body: "Tap a station to plan a ride there. The dots menu sets it as home or work, or saves it." },
-    { target: "departures", title: "Next departures", body: "The badge says where the times come from: “Live MBTA”, or “Demo data” when they are simulated." },
   ],
   discover: [
     { target: "discover-prefs", title: "Tell us what you like", body: "Type where you start, then pick what you are into and a budget. The list updates as you go." },
@@ -53,16 +52,16 @@ export const TOUR: Record<Scene, Spot[]> = {
   ],
   "journey-plan": [
     { target: "journey-progress", title: "Eight stages", body: "From planning to done. The bar fills as you move through the trip." },
-    { target: "route-options", title: "Ways to go", body: "Each route shows the fare, the next train and the minutes for every part: walking, each train and each change. Sort by fastest or cheapest." },
-    { target: "route-summary", title: "Your route", body: "Line, direction and stops come from the MBTA network. Ride times are estimates, and labelled that way." },
+    { target: "route-options", title: "Ways to go", body: "Each route shows the fare, the next train and the minutes for every part. Sort by fastest or cheapest. Bus and Commuter Rail options from Google appear underneath when there are any." },
+    { target: "route-summary", title: "Step by step", body: "Every move in order: walk, which train to board and its direction, where to get off, and each change. Directions are the MBTA’s own." },
     { target: "fare-summary", title: "What it costs, how to pay", body: "The fare is MBTA's published price, with the ways to pay that this service accepts. Open it for the breakdown." },
     { target: "tracking-mode", title: "Automatic or manual", body: "Automatic follows your live location and moves the journey on for you. Manual lets you confirm each step yourself. You can switch at any time." },
     { target: "journey-action", title: "One button moves you on", body: "Each stage has a single action. Tap “Start journey” when you are ready." },
   ],
   "journey-wait": [
     { target: "journey-map", title: "Your navigation map", body: "The route, the stations ahead and where you are. In automatic mode the dot follows your live location." },
-    { target: "departures", title: "Only your trains", body: "Departures are filtered to your line and direction." },
-    { target: "play-while-waiting", title: "Make the wait fun", body: "Play a round of Guess Boston here, then tap the gold strip to come back." },
+    { target: "departures", title: "Only your trains", body: "Just the trains that go to your stop, with the platform they leave from." },
+    { target: "play-while-waiting", title: "Make the wait fun", body: "Five quick games, each with a picture of what you will see. Pick one, then tap the gold strip to come back." },
     { target: "journey-action", title: "Boarding earns a stamp", body: "When the train pulls in, tap “My train is here” to collect your first station stamp." },
   ],
   "journey-ride": [

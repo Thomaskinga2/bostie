@@ -45,7 +45,8 @@ export default function PlayPage() {
   const logAi = useStore((s) => s.logAi);
   const d = useMemo(() => derive(events), [events]);
 
-  const [mode, setMode] = useState<GameMode>("mix");
+  const mode = useStore((s) => s.playMode);
+  const setMode = useStore((s) => s.setPlayMode);
   const [round, setRound] = useState<Round | null>(null);
   const [input, setInput] = useState<"text" | "pin">("text");
   const [text, setText] = useState("");
@@ -181,9 +182,10 @@ export default function PlayPage() {
                 <span className={cx("grid size-6 shrink-0 place-items-center rounded-full border-2", mode === m.id ? "border-forest bg-forest text-paper" : "border-line")}>
                   {mode === m.id && <Check size={13} strokeWidth={3.5} aria-hidden />}
                 </span>
+                <Photo id={m.photo} credit={false} className="size-[52px] shrink-0 rounded-xl" />
                 <span className="min-w-0">
                   <span className="block text-[16px] font-bold">{m.name}</span>
-                  <span className="block text-[13.5px] text-ink-soft">{m.blurb}</span>
+                  <span className="block text-[13.5px] leading-snug text-ink-soft">{m.about}</span>
                 </span>
               </button>
             ))}

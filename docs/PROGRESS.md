@@ -39,6 +39,8 @@ Saved places, service alerts, journey and discovery history, achievement badges,
 | MBTA fare information: fare engine, route comparison cards, fare summary, payment guidance | Done | 11 logic tests against published prices; fare checks in two flow tests |
 | Automatic (live location) or Manual journey tracking; per-part times on route cards; navigation map during a journey | Done | Tracking logic tests; demo and real-location flow tests |
 | Share a discovery, My day recap, heat map, GPS trail (device only) | Done. Not checked on a real phone: the native share menu, and an outdoor GPS trail. No heat layer on the Google Maps backend | Recap logic tests; share, My day and tracking flow tests; generated pictures reviewed |
+| Route planning requirements: official directions, branch-aware departures with platform, Scheduled fallback, step-by-step list, Google transit alternatives, Enter-with-no-match message | Done. Google routes not checked live (no key in local env; needs Routes API enabled on the Vercel key) | Logic tests for directions, train matching, steps and Google-route conversion; four flow tests; live MBTA predictions checked on the dev server |
+| Games listed with pictures on the waiting screen and in Guess Boston | Done | Demo flow test, screenshot |
 
 ## P2 and not built
 

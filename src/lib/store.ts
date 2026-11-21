@@ -1,6 +1,7 @@
 "use client";
 // Local-first guest state. Everything a judge does persists in localStorage with no
 // sign-up; when Supabase is configured the same progress is mirrored there (lib/sync.ts).
+import type { GameMode } from "./game";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AiMeta } from "./contracts";
@@ -27,6 +28,8 @@ export type Journey = {
   startedAt: number;
   /** Set when the trip is to an address or place: the walk from the last station. */
   walkTo?: WalkTo;
+  /** The address or place the trip starts from, when it is not a station: the walk to the first station. */
+  walkFrom?: WalkTo;
   /** "auto" follows the rider's live location; "manual" waits for a tap at each step. */
   tracking?: "auto" | "manual";
 };
@@ -77,6 +80,9 @@ type State = Progress & {
   toggleSaved: (id: string) => void;
   setShortcut: (kind: "home" | "work", stationId: string | null) => void;
   removeRecent: (stationId: string) => void;
+  /** The Guess Boston game picked last, so a game chosen elsewhere opens ready to start. */
+  playMode: GameMode;
+  setPlayMode: (m: GameMode) => void;
   addTrailPoint: (p: TrailPoint) => void;
   clearTrail: () => void;
   dismissCelebration: () => void;
@@ -94,7 +100,7 @@ type State = Progress & {
   resetAll: () => void;
   requestLocation: () => void;
 
-  startJourney: (from: string, to: string, walkTo?: WalkTo) => boolean;
+  startJourney: (from: string, to: string, walkTo?: WalkTo, walkFrom?: WalkTo) => boolean;
   /** Swap in another route option. Only while the journey is still being planned. */
   choosePlan: (plan: Plan) => void;
   setTracking: (mode: "auto" | "manual") => void;
@@ -156,6 +162,8 @@ export const useStore = create<State>()(
         set((s) => ({ saved: s.saved.includes(id) ? s.saved.filter((x) => x !== id) : [...s.saved, id] })),
       setShortcut: (kind, stationId) => set(kind === "home" ? { home: stationId } : { work: stationId }),
       removeRecent: (stationId) => set((s) => ({ recents: s.recents.filter((id) => id !== stationId) })),
+      playMode: "mix",
+      setPlayMode: (playMode) => set({ playMode }),
       addTrailPoint: (p) => set((s) => ({ trail: [...s.trail, p].slice(-TRAIL_CAP) })),
       clearTrail: () => set({ trail: [] }),
       dismissCelebration: () => set((s) => ({ celebrations: s.celebrations.slice(1) })),
@@ -186,11 +194,11 @@ export const useStore = create<State>()(
         );
       },
 
-      startJourney: (from, to, walkTo) => {
+      startJourney: (from, to, walkTo, walkFrom) => {
         const plan = planRoute(from, to);
         if (!plan) return false;
         set((s) => ({
-          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now(), walkTo },
+          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now(), walkTo, walkFrom },
           recents: [to, ...s.recents.filter((id) => id !== to)].slice(0, 6),
         }));
         return true;

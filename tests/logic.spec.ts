@@ -11,7 +11,7 @@ import { recommend } from "../src/lib/discover";
 import { ACCEPTED, FARE_SOURCES } from "../src/data/fares";
 import { commuterRailFare, formatFare, journeyFare, quoteFare } from "../src/lib/fares";
 import { GUIDE_STEPS, TOUR } from "../src/lib/guide";
-import { bestStationFor, planRoute, routeOptions, STATION, STATIONS } from "../src/lib/network";
+import { bestStationFor, legInfo, planFromStops, planRoute, routeOptions, servesLeg, STATION, STATIONS, tripSteps } from "../src/lib/network";
 import { PLACE } from "../src/lib/places";
 import { dayRecap, heatPoints, trailSegments } from "../src/lib/recap";
 import type { Journey } from "../src/lib/store";
@@ -409,5 +409,62 @@ test.describe("day recap and heat map", () => {
     expect(trailSegments([step(0, T0)], "all")).toEqual([]); // a single point is not a path
     expect(dayRecap([], [], trail, day).trailKm).toBeGreaterThan(0.1);
     expect(dayRecap([], [], trail, day).trailKm).toBeLessThan(0.3); // the cross-town jump is not counted
+  });
+});
+
+test.describe("directions and trains for a leg", () => {
+  const leg = (a: string, b: string) => planRoute(a, b)!.legs[0];
+  const pt = (id: string) => ({ lat: STATION[id].lat, lng: STATION[id].lng });
+
+  test("destinations and direction names are the MBTA's own", () => {
+    expect(legInfo(leg("place-harsq", "place-pktrm"))).toMatchObject({ direction: 0, directionName: "Southbound", toward: "Ashmont/Braintree", label: "Red Line" });
+    expect(legInfo(leg("place-pktrm", "place-harsq"))).toMatchObject({ direction: 1, directionName: "Northbound", toward: "Alewife" });
+    expect(legInfo(leg("place-pktrm", "place-smmnl")).toward).toBe("Ashmont"); // past the split: one branch only
+    expect(legInfo(leg("place-pktrm", "place-qnctr")).toward).toBe("Braintree");
+    expect(legInfo(leg("place-state", "place-aqucl"))).toMatchObject({ directionName: "Eastbound", toward: "Wonderland" });
+  });
+
+  test("a Green Line trunk trip lists every branch that makes it", () => {
+    const west = legInfo(leg("place-pktrm", "place-kencl"));
+    expect(west.routes).toEqual(["Green-B", "Green-C", "Green-D"]);
+    expect(west.label).toBe("Green Line B, C or D");
+    expect(west.toward).toBe("Boston College, Cleveland Circle or Riverside");
+    expect(legInfo(leg("place-pktrm", "place-hsmnl")).routes).toEqual(["Green-E"]);
+  });
+
+  test("only trains that reach the stop count as departures", () => {
+    const shawmut = leg("place-pktrm", "place-smmnl");
+    const red = (headsign: string, direction = 0) => ({ route: "Red", direction, headsign });
+    expect(servesLeg(shawmut, red("Ashmont"))).toBe(true);
+    expect(servesLeg(shawmut, red("Braintree"))).toBe(false);
+    expect(servesLeg(shawmut, red("Alewife", 1))).toBe(false);
+    expect(servesLeg(shawmut, red("Broadway"))).toBe(false); // ends early, before Shawmut
+    expect(servesLeg(leg("place-harsq", "place-pktrm"), red("Broadway"))).toBe(true); // ends early, but past Park Street
+    expect(servesLeg(shawmut, red("Special"))).toBe(true); // unplaceable headsign: shown, not hidden
+    expect(servesLeg(leg("place-harsq", "place-pktrm"), red("Braintree"))).toBe(true); // before the split either branch works
+    const kenmore = leg("place-pktrm", "place-kencl");
+    expect(servesLeg(kenmore, { route: "Green-C", direction: 0, headsign: "Cleveland Circle" })).toBe(true);
+    expect(servesLeg(kenmore, { route: "Green-E", direction: 0, headsign: "Heath Street" })).toBe(false);
+    expect(servesLeg(kenmore, { route: "Orange", direction: 0, headsign: "Forest Hills" })).toBe(false);
+  });
+
+  test("a trip reads as ordered instructions: walk, board, ride, change, walk", () => {
+    const plan = planRoute("place-harsq", "place-aqucl")!;
+    const steps = tripSteps(plan, 5, { name: "New England Aquarium", minutes: 3 });
+    expect(steps.map((s) => s.kind)).toEqual(["walk", ...plan.legs.flatMap((_, i) => (i < plan.legs.length - 1 ? ["board", "ride", "change"] : ["board", "ride"])), "walk"]);
+    expect(steps[0].title).toBe("Walk to Harvard");
+    expect(steps[1]).toMatchObject({ title: "Board the Red Line", detail: "Southbound platform, toward Ashmont/Braintree." });
+    expect(steps.at(-1)).toMatchObject({ title: "Walk to New England Aquarium", minutes: 3 });
+    expect(steps.find((s) => s.kind === "change")!.detail).toMatch(/follow signs for the .+ toward /);
+    expect(tripSteps(plan, null)[0].kind).toBe("board"); // no walk known: start at the platform
+  });
+
+  test("a rail route described by stop positions becomes a plan; anything else does not", () => {
+    const plan = planFromStops([{ from: pt("place-harsq"), to: pt("place-pktrm"), lineName: "Red Line" }, { from: pt("place-pktrm"), to: pt("place-kencl"), lineName: "Green Line C" }])!;
+    expect(plan.legs.map((l) => l.line)).toEqual(["Red", "Green"]);
+    expect(plan.legs[0].stops).toEqual(planRoute("place-harsq", "place-pktrm")!.legs[0].stops);
+    expect(planFromStops([{ from: { lat: 42.40, lng: -71.20 }, to: pt("place-pktrm") }])).toBeNull(); // a bus stop
+    expect(planFromStops([{ from: pt("place-harsq"), to: pt("place-kencl") }])).toBeNull(); // no single line links them
+    expect(planFromStops([{ from: pt("place-harsq"), to: pt("place-pktrm") }, { from: pt("place-kencl"), to: pt("place-hymnl") }])).toBeNull(); // rides do not connect
   });
 });

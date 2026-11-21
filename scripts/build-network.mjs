@@ -26,6 +26,9 @@ const routes = routesRes.data.map((r) => ({
   textColor: "#" + r.attributes.text_color,
   // Green-B/C/D/E share one "line" for collection + transfer purposes.
   line: r.id.startsWith("Green") ? "Green" : r.id,
+  // Indexed by direction_id: what the MBTA calls each direction and where it ends.
+  directionNames: r.attributes.direction_names,
+  directionDestinations: r.attributes.direction_destinations,
 }));
 
 const stations = {};

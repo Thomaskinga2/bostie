@@ -120,11 +120,30 @@ export type Prediction = {
   route: string;
   headsign: string;
   direction: number;
-  /** ISO timestamp of the predicted departure (or arrival at a terminal). */
+  /** ISO timestamp of the departure. */
   at: string;
   status: string | null;
+  /** The MBTA's name for the platform this train leaves from, e.g. "Ashmont/Braintree". */
+  platform: string | null;
+  /** true = from the published timetable, not a live prediction. */
+  scheduled: boolean;
 };
-export type PredictionsResponse = { source: "live"; fetchedAt: string; stop: string; predictions: Prediction[] };
+export type PredictionsResponse = { source: "live" | "scheduled"; fetchedAt: string; stop: string; predictions: Prediction[] };
+
+// --- Google transit routes (optional alternatives) -----------------------------
+
+export type TransitStop = { name: string; lat: number; lng: number };
+export type TransitStep =
+  | { kind: "walk"; minutes: number; metres: number }
+  | {
+      kind: "transit"; minutes: number;
+      /** Google's TransitVehicleType: BUS, SUBWAY, TRAM, COMMUTER_TRAIN, HEAVY_RAIL, FERRY… */
+      vehicle: string;
+      /** Short name to show, e.g. "1" or "Red Line". */
+      line: string; lineName: string; color: string | null; headsign: string; stops: number; from: TransitStop; to: TransitStop;
+    };
+export type TransitRoute = { minutes: number; steps: TransitStep[] };
+export type TransitRoutesResponse = { provider: "google" | "none"; routes: TransitRoute[] };
 
 export type Alert = { id: string; header: string; effect: string; severity: number; routes: string[]; url: string | null };
 export type AlertsResponse = { source: "live"; fetchedAt: string; alerts: Alert[] };

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { Alert, AlertsResponse, PlaceHit, PlacesResponse, Prediction, PredictionsResponse } from "./contracts";
+import type { Alert, AlertsResponse, PlaceHit, PlacesResponse, Prediction, PredictionsResponse, TransitRoute, TransitRoutesResponse } from "./contracts";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -58,6 +58,25 @@ function useLive<R, T>(url: string | null, pick: (r: R) => { data: T; fetchedAt:
   // Results for a previous url (another station) are never shown for this one.
   return live && live.url === url ? live : { state: "loading", data: empty, fetchedAt: null };
 }
+
+/** Extra routes from Google, fetched once per trip. Empty when Google is not set up or fails. */
+export function useTransitRoutes(from: { lat: number; lng: number }, to: { lat: number; lng: number }): TransitRoute[] {
+  const key = `${from.lat},${from.lng},${to.lat},${to.lng}`;
+  const [got, setGot] = useState<{ key: string; routes: TransitRoute[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/routes", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ from, to }), signal: AbortSignal.timeout(10_000) })
+      .then((r) => (r.ok ? (r.json() as Promise<TransitRoutesResponse>) : null))
+      .then((r) => alive && r && setGot({ key, routes: r.routes }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key stands for both points
+  }, [key]);
+  return got?.key === key ? got.routes : NO_ROUTES;
+}
+const NO_ROUTES: TransitRoute[] = [];
 
 const NO_PREDICTIONS: Prediction[] = [];
 const NO_ALERTS: Alert[] = [];

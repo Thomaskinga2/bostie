@@ -26,7 +26,7 @@ export type Leg = {
   to: string;
   /** Station ids from boarding to alighting, inclusive. */
   stops: string[];
-  /** Headsign-style direction, e.g. "Ashmont/Braintree". */
+  /** Where the trains to take are headed, in the MBTA's own words, e.g. "Ashmont/Braintree". See legInfo(). */
   toward: string;
   minutes: number;
 };
@@ -42,6 +42,10 @@ export const LINES: Record<LineId, { id: LineId; name: string; color: string; te
 };
 export const MAIN_LINES: LineId[] = ["Red", "Orange", "Blue", "Green"];
 
+/** Per route, indexed by MBTA direction_id: the direction's name and where it ends. */
+const DIRECTIONS: Record<string, { names: string[]; destinations: string[] }> = Object.fromEntries(
+  raw.routes.map((r) => [r.id, { names: r.directionNames, destinations: r.directionDestinations }]),
+);
 const routeLine = Object.fromEntries(raw.routes.map((r) => [r.id, r.line as LineId]));
 export const lineOf = (route: string): LineId => routeLine[route] ?? "Red";
 export const routeLabel = (route: string) =>
@@ -95,15 +99,58 @@ for (const p of PATTERNS) {
   }
 }
 
-function toward(route: string, stops: string[]): string {
-  const names = new Set<string>();
-  for (const p of PATTERNS.filter((p) => p.route === route)) {
-    const i = p.stops.indexOf(stops[0]);
-    const j = p.stops.indexOf(stops[stops.length - 1]);
-    if (i < 0 || j < 0) continue;
-    names.add(STATION[j > i ? p.stops[p.stops.length - 1] : p.stops[0]].name);
+/** Stop patterns of `route` that call at both stations (the Red Line has one per branch). */
+const patternsVia = (route: string, a: string, b: string) => PATTERNS.filter((p) => p.route === route && p.stops.includes(a) && p.stops.includes(b));
+/** The far end of a pattern in a direction (patterns are stored in direction 0 order). */
+const terminal = (p: { stops: string[] }, direction: number) => STATION[direction === 0 ? p.stops[p.stops.length - 1] : p.stops[0]].name;
+
+const or = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}` : (xs[0] ?? ""));
+
+/**
+ * Everything a rider needs to board the right train for a leg, from MBTA data:
+ * every route that makes the trip (Park Street to Kenmore is Green B, C or D), the
+ * MBTA direction, and the destination shown on the train.
+ */
+export function legInfo(leg: Pick<Leg, "route" | "from" | "to">) {
+  const direction = legDirection(leg.route, leg.from, leg.to);
+  const line = lineOf(leg.route);
+  const routes = raw.routes
+    .map((r) => r.id)
+    .filter((r) => lineOf(r) === line && patternsVia(r, leg.from, leg.to).length > 0 && legDirection(r, leg.from, leg.to) === direction);
+  const destinations = routes.map((r) => {
+    const all = PATTERNS.filter((p) => p.route === r);
+    const via = patternsVia(r, leg.from, leg.to);
+    // A branching line (Red): name only the branches that reach the stop, unless all do.
+    return all.length > 1 && via.length < all.length ? via.map((p) => terminal(p, direction)).join("/") : (DIRECTIONS[r]?.destinations[direction] ?? terminal(via[0], direction));
+  });
+  const label = routes.length > 1 && line === "Green" ? `Green Line ${or(routes.map((r) => r.slice(6)))}` : routeLabel(leg.route);
+  return {
+    direction,
+    /** "Southbound", "Westbound", "Inbound" */
+    directionName: (DIRECTIONS[leg.route]?.names[direction] ?? "").replace(/^(North|South|East|West)$/, "$1bound"),
+    routes,
+    /** "Green Line B, C or D" */
+    label,
+    toward: or([...new Set(destinations)]),
+  };
+}
+
+/**
+ * Whether a departing train actually makes this leg: right line, right direction, and
+ * a train that gets as far as the stop: the right branch, and not one ending early.
+ * A headsign we cannot place at all is kept rather than hidden.
+ */
+export function servesLeg(leg: Pick<Leg, "route" | "from" | "to">, train: { route: string; direction: number; headsign: string }): boolean {
+  const info = legInfo(leg);
+  if (!info.routes.includes(train.route) || train.direction !== info.direction) return false;
+  const named = PATTERNS.filter((p) => p.route === train.route && p.stops.includes(leg.from) && terminal(p, train.direction) === train.headsign);
+  if (named.length) return named.some((p) => p.stops.includes(leg.to));
+  // A train ending early (headsign "Broadway" during shuttle work): it must get at least as far as the stop.
+  for (const p of patternsVia(train.route, leg.from, leg.to)) {
+    const end = p.stops.findIndex((id) => STATION[id].name === train.headsign);
+    if (end >= 0) return train.direction === 0 ? end >= p.stops.indexOf(leg.to) : end <= p.stops.indexOf(leg.to);
   }
-  return [...names].join("/");
+  return true;
 }
 
 export type PlanOptions = {
@@ -161,7 +208,7 @@ export function planRoute(fromId: string, toId: string, opts: PlanOptions = {}):
   let km = 0;
   for (const l of riding) {
     l.to = l.stops[l.stops.length - 1];
-    l.toward = toward(l.route, l.stops);
+    l.toward = legInfo(l).toward;
     for (let i = 0; i < l.stops.length - 1; i++) {
       l.minutes += rideMinutes(l.route, l.stops[i], l.stops[i + 1]);
       km += distanceKm(STATION[l.stops[i]], STATION[l.stops[i + 1]]);
@@ -188,10 +235,10 @@ export function legDirection(route: string, from: string, to: string): 0 | 1 {
   return 0;
 }
 
-export type RouteOption = { plan: Plan; tag: "Fastest" | "Fewest changes" | "Alternative" };
+export type RouteOption = { plan: Plan; tag: "Fastest" | "Fewest changes" | "Alternative" | "From Google" };
 
 /** Same trains in the same order: Green branches sharing a trunk count as one route. */
-const signature = (p: Plan) => p.legs.map((l) => `${l.line}:${l.from}>${l.to}`).join("|");
+export const signature = (p: Plan) => p.legs.map((l) => `${l.line}:${l.from}>${l.to}`).join("|");
 
 /**
  * Up to three distinct ways to make a trip: the fastest, one that prefers fewer changes,
@@ -210,7 +257,10 @@ export function routeOptions(fromId: string, toId: string): RouteOption[] {
   return out;
 }
 
-/** The last step of a trip to somewhere that is not a station. */
+/** Minutes on foot for a straight-line distance: 4.8 km/h with a 1.3 detour factor (same as geo.walkMinutes). */
+export const walkFor = (km: number) => Math.max(1, Math.round(((km * 1.3) / 4.8) * 60));
+
+/** The last step of a trip to somewhere that is not a station (or, as `walkFrom`, the first step from one). */
 export type WalkTo = { name: string; address: string; lat: number; lng: number; minutes: number; km: number };
 
 /**
@@ -233,4 +283,60 @@ export function bestStationFor(fromId: string, point: LatLng, maxWalkKm = 2.5): 
     if (!best || total < best.totalMinutes) best = { station: c.station, plan, walkKm: c.km, walkMinutes: walk, totalMinutes: total };
   }
   return best;
+}
+
+/** One instruction in a trip. `leg` is the index of the train it belongs to. */
+export type TripStep = { kind: "walk" | "board" | "ride" | "change"; title: string; detail: string; minutes: number | null; leg: number; color?: string };
+
+/**
+ * The whole trip as ordered instructions: walk in, then for each train board it, ride it
+ * and (between trains) change, then walk out.
+ */
+export function tripSteps(plan: Plan, walkInMin: number | null, walkTo?: Pick<WalkTo, "name" | "minutes">, walkFrom?: string): TripStep[] {
+  const steps: TripStep[] = [];
+  const last = plan.legs.length - 1;
+  if (walkInMin && (walkInMin > 1 || walkFrom)) steps.push({ kind: "walk", leg: 0, minutes: walkInMin, title: `Walk to ${STATION[plan.from].name}`, detail: walkFrom ? `From ${walkFrom}.` : "Go to the platform shown in the next step." });
+  plan.legs.forEach((leg, i) => {
+    const info = legInfo(leg);
+    const color = LINES[leg.line].color;
+    const n = leg.stops.length - 1;
+    steps.push({ kind: "board", leg: i, minutes: null, color, title: `Board the ${info.label}`, detail: `${info.directionName} platform, toward ${info.toward}.` });
+    steps.push({ kind: "ride", leg: i, minutes: leg.minutes, color, title: `Ride ${n} stop${n > 1 ? "s" : ""} to ${STATION[leg.to].name}`, detail: i === last ? "Get off here: this is your stop." : "Get off here to change trains." });
+    if (i < last) {
+      const next = legInfo(plan.legs[i + 1]);
+      steps.push({ kind: "change", leg: i, minutes: TRANSFER_MIN, title: `Change at ${STATION[leg.to].name}`, detail: `Stay inside the station and follow signs for the ${next.label}, ${next.directionName.toLowerCase()} toward ${next.toward}.` });
+    }
+  });
+  if (walkTo) steps.push({ kind: "walk", leg: last, minutes: walkTo.minutes, title: `Walk to ${walkTo.name}`, detail: `From ${STATION[plan.to].name} station.` });
+  return steps;
+}
+
+/**
+ * A Plan from a list of train rides given as stop positions (how Google describes a
+ * transit route). Returns null unless every ride is between two stations on one of our
+ * rapid-transit routes, so a bus or Commuter Rail route is never passed off as guidable.
+ */
+export function planFromStops(rides: { from: LatLng; to: LatLng; lineName?: string }[]): Plan | null {
+  const legs: Leg[] = [];
+  let km = 0;
+  for (const ride of rides) {
+    const [a, b] = [nearestStation(ride.from), nearestStation(ride.to)];
+    if (a.km > 0.3 || b.km > 0.3 || a.station.id === b.station.id) return null;
+    const [from, to] = [a.station.id, b.station.id];
+    const routes = raw.routes.map((r) => r.id).filter((r) => patternsVia(r, from, to).length > 0);
+    const route = routes.find((r) => ride.lineName?.includes(LINES[lineOf(r)].name)) ?? routes[0];
+    if (!route) return null;
+    const p = patternsVia(route, from, to)[0];
+    const [i, j] = [p.stops.indexOf(from), p.stops.indexOf(to)];
+    const stops = i < j ? p.stops.slice(i, j + 1) : p.stops.slice(j, i + 1).reverse();
+    let minutes = 0;
+    for (let n = 0; n < stops.length - 1; n++) {
+      minutes += rideMinutes(route, stops[n], stops[n + 1]);
+      km += distanceKm(STATION[stops[n]], STATION[stops[n + 1]]);
+    }
+    legs.push({ route, line: lineOf(route), from, to, stops, toward: legInfo({ route, from, to }).toward, minutes: Math.round(minutes) });
+  }
+  // The rides must connect inside a station for the journey screens to follow them.
+  if (!legs.length || legs.some((l, n) => n > 0 && legs[n - 1].to !== l.from)) return null;
+  return { from: legs[0].from, to: legs[legs.length - 1].to, legs, km, minutes: legs.reduce((m, l) => m + l.minutes, 0) + (legs.length - 1) * TRANSFER_MIN };
 }

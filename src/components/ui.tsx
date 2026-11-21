@@ -36,8 +36,8 @@ export function Button({ variant = "primary", size = "md", className, ...rest }:
 }
 
 /** Says where a number came from. Simulated data is never dressed up as live. */
-export function SourceBadge({ kind, className }: { kind: "live" | "estimated" | "simulated" | "offline"; className?: string }) {
-  const label = { live: "Live MBTA", estimated: "Estimated", simulated: "Demo data", offline: "Offline" }[kind];
+export function SourceBadge({ kind, className }: { kind: "live" | "scheduled" | "estimated" | "simulated" | "offline"; className?: string }) {
+  const label = { live: "Live MBTA", scheduled: "Scheduled", estimated: "Estimated", simulated: "Demo data", offline: "Offline" }[kind];
   return (
     <span
       className={cx(

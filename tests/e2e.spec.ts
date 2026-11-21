@@ -26,7 +26,7 @@ const scanOk = (id = "state-house", name = "Massachusetts State House") => ({
   meta: { ...META, feature: "Landmark recognition", modality: "image + text → JSON" },
 });
 
-type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions" | "alerts" | "places", (route: Route) => unknown>>;
+type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions" | "alerts" | "places" | "routes", (route: Route) => unknown>>;
 
 /** Stand-in location search: knows two real Boston places, nothing else. */
 const PLACE_HITS = [
@@ -37,12 +37,13 @@ const PLACE_HITS = [
 
 async function mockApis(page: Page, over: Mocks = {}) {
   const json = (body: unknown, status = 200) => (route: Route) => route.fulfill({ status, json: body });
-  await page.route("**/tile.openstreetmap.org/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG }));
+  await page.route("**/tile.openstreetmap.org/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG, headers: { "access-control-allow-origin": "*" } }));
   await page.route("**/upload.wikimedia.org/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG, headers: { "access-control-allow-origin": "*" } }));
   await page.route("**/api/mbta/predictions**", over.predictions ?? json({
     source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq",
-    predictions: [{ id: "p1", route: "Red", headsign: "Ashmont", direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null }],
+    predictions: [{ id: "p1", route: "Red", headsign: "Ashmont", direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null, platform: "Ashmont/Braintree", scheduled: false }],
   }));
+  await page.route("**/api/routes", over.routes ?? json({ provider: "none", routes: [] }));
   await page.route("**/api/mbta/alerts", over.alerts ?? json({
     source: "live", fetchedAt: new Date().toISOString(),
     alerts: [{ id: "a1", header: "Red Line: shuttle buses replace service this weekend.", effect: "SHUTTLE", severity: 7, routes: ["Red"], url: null }],
@@ -153,13 +154,13 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   // Plan Harvard → Park Street
   await page.getByRole("link", { name: "Plan a ride" }).click();
   await readTips();
-  await expect(page.getByText("Demo data").first()).toBeVisible(); // simulated arrivals are labelled
+  await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("Current location"); // the demo position
   await shot(page, "02b-ride");
   await page.getByRole("button", { name: control("plan") }).click();
   await expect(page).toHaveURL(/\/journey$/);
   await readTips();
   await expect(page.getByRole("heading", { name: "Harvard to Park Street" })).toBeVisible();
-  await expect(page.getByText("4 stops, about")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Step by step" }).getByText("Ride 4 stops to Park Street")).toBeVisible();
   await shot(page, "03-route");
 
   // Fare and how to pay, before the judge begins the journey.
@@ -184,7 +185,8 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await shot(page, "04-waiting");
 
   // Guess Boston while waiting
-  await page.getByRole("main").getByRole("link", { name: /Play Guess Boston while you wait/ }).click();
+  await expect(page.getByRole("region", { name: "Play while you wait" }).getByRole("link")).toHaveCount(5); // every game, with a picture
+  await page.getByRole("main").getByRole("link", { name: /Classic/ }).click();
   await readTips();
   await page.getByRole("button", { name: control("play") }).click();
   await expect(tipDialog(page).getByRole("heading", { name: TOUR["play-round"][0].title })).toBeVisible();
@@ -372,12 +374,11 @@ test("live transit: real predictions are labelled live, failures degrade honestl
     predictions: (route) =>
       down
         ? route.fulfill({ status: 502, json: { error: "mbta_unavailable" } })
-        : route.fulfill({ json: { source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq", predictions: [{ id: "p1", route: "Red", headsign: "Ashmont", direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null }] } }),
+        : route.fulfill({ json: { source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq", predictions: [{ id: "p1", route: "Red", headsign: "Ashmont", direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null, platform: "Ashmont/Braintree", scheduled: false }] } }),
   });
   await seed(page, { demo: false });
   await page.goto("/ride");
-  await expect(page.getByText("Live MBTA", { exact: true }).first()).toBeVisible();
-  await expect(page.locator("li", { hasText: "Ashmont" }).first()).toBeVisible();
+  await expect(page.getByText("Departures")).toHaveCount(0); // Ride is for planning: departures live on the journey screen
   await expect(page.getByText("Demo data")).toHaveCount(0);
   await expect(page.getByText("1 live service alert")).toBeVisible();
 
@@ -385,6 +386,8 @@ test("live transit: real predictions are labelled live, failures degrade honestl
   await page.getByRole("button", { name: "Go to Aquarium" }).click(); // picking a result plans the trip
   await expect(page.getByText(/Change at/).first()).toBeVisible();
   await expect(page.getByText("Estimated", { exact: true }).first()).toBeVisible();
+  await expect(page.getByTestId("departures").getByText("Live MBTA")).toBeVisible();
+  await expect(page.getByTestId("departures").getByText("Ashmont", { exact: true })).toBeVisible();
   await shot(page, "16-transfer-route");
 
   // Several legs, one fare: changes between subway lines are not charged again.
@@ -411,7 +414,8 @@ test("live transit: real predictions are labelled live, failures degrade honestl
 
   down = true;
   await page.goto("/ride");
-  await expect(page.getByText("Journey in progress").or(page.getByText("Continue journey")).first()).toBeVisible();
+  await expect(page.getByText("Continue journey")).toBeVisible();
+  await page.goto("/journey");
   await expect(page.getByText("Live MBTA predictions are unavailable right now.")).toBeVisible();
   await expect(page.getByText("Offline", { exact: true })).toBeVisible();
 });
@@ -588,7 +592,8 @@ test("Ride search: type, get suggestions inside the phone, and go", async ({ pag
   await expect(page.locator("select")).toHaveCount(0); // no native menus that could spill outside the frame
   const search = page.getByRole("combobox", { name: "Where to?" });
   const results = page.getByRole("listbox", { name: "Where to? results" });
-  await expect(page.getByText("From Harvard")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("Harvard");
+  await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("From");
 
   // Typing narrows to the best matches, and stays inside the phone.
   await search.fill("ken");
@@ -610,10 +615,10 @@ test("Ride search: type, get suggestions inside the phone, and go", async ({ pag
   await expect(page.getByRole("link", { name: "Choose on map" })).toBeVisible();
 
   // Change the starting station with the arrows button.
-  await page.getByRole("button", { name: "Change starting station" }).click();
-  await page.getByRole("combobox", { name: "Starting station" }).fill("south st");
+  await page.getByRole("button", { name: "Change starting point" }).click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("south st");
   await page.getByRole("button", { name: "Choose South Station" }).click();
-  await expect(page.getByText("From South Station")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("South Station");
 
   // Enter takes the first result and plans the trip.
   await search.fill("kenm");
@@ -763,8 +768,8 @@ test("automatic tracking follows real location, and a blocked permission falls b
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ ...at.between, accuracy: 20 });
   await page.goto("/ride");
-  await page.getByRole("button", { name: "Change starting station" }).click();
-  await page.getByRole("combobox", { name: "Starting station" }).fill("harvard");
+  await page.getByRole("button", { name: "Change starting point" }).click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("harvard");
   await page.getByRole("button", { name: "Choose Harvard", exact: true }).click();
   await page.getByRole("button", { name: "Go to Park Street" }).click();
   await page.getByRole("radio", { name: /Automatic/ }).click();
@@ -893,4 +898,158 @@ test("My day: today's places, the heat map, sharing the day and clearing locatio
   await page.getByRole("button", { name: "Clear history" }).click();
   expect((await store(page)).trail).toEqual([]);
   await expect(page.getByText("Nothing saved yet.")).toBeVisible();
+});
+
+test("directions and departures: official destinations, only trains that reach the stop, platform, and timetable times", async ({ page }) => {
+  const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
+  let scheduled = false;
+  const train = (id: string, headsign: string, min: number) => ({ id, route: "Red", headsign, direction: 0, at: at(min), status: null, platform: "Ashmont/Braintree", scheduled });
+  await mockApis(page, {
+    predictions: (route) => route.fulfill({ json: { source: scheduled ? "scheduled" : "live", fetchedAt: at(0), stop: "place-pktrm", predictions: [train("b", "Braintree", 2), train("a", "Ashmont", 6)] } }),
+  });
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Change starting point" }).click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("park");
+  await page.getByRole("button", { name: "Choose Park Street", exact: true }).click();
+  await page.getByRole("combobox", { name: "Where to?" }).fill("shawmut"); // on the Ashmont branch only
+  await page.getByRole("button", { name: "Go to Shawmut" }).click();
+
+  const steps = page.getByRole("list", { name: "Step by step" });
+  await expect(steps.getByText("Board the Red Line")).toBeVisible();
+  await expect(steps.getByText("Southbound platform, toward Ashmont.")).toBeVisible(); // not "Ashmont/Braintree"
+  await expect(steps.getByText(/Ride \d+ stops to Shawmut/)).toBeVisible();
+
+  const departures = page.getByTestId("departures");
+  await expect(departures.getByText("Ashmont", { exact: true })).toBeVisible();
+  await expect(departures.getByText("Braintree", { exact: true })).toHaveCount(0); // the sooner train does not go to Shawmut
+  await expect(departures.getByText("Live MBTA")).toBeVisible();
+  await expect(departures.getByText("Platform:")).toContainText("Ashmont/Braintree");
+  await expect(page.getByText(/Next train in 6 min \(live\)/)).toBeVisible();
+  await steps.scrollIntoViewIfNeeded();
+  await shot(page, "22-steps");
+
+  // No live predictions: the timetable is shown, and says so.
+  scheduled = true;
+  await page.reload();
+  await expect(page.getByTestId("departures").getByText("Scheduled", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("departures").getByText("Live MBTA")).toHaveCount(0);
+  await expect(page.getByText(/Timetable times/)).toBeVisible();
+  await expect(page.getByText(/Next train in 6 min \(scheduled\)/)).toBeVisible();
+
+  // During the ride the same list stays one tap away, with the current step marked.
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await page.getByRole("button", { name: /I am at the station/ }).click();
+  await expect(page.getByText("Southbound platform. Take any train toward Ashmont.")).toBeVisible();
+  await page.getByText("All steps for this trip").click();
+  await expect(page.getByTestId("all-steps").locator('[aria-current="step"]')).toContainText("Board the Red Line");
+});
+
+test("Green Line trunk trips accept every branch that goes there", async ({ page }) => {
+  await mockApis(page);
+  await seed(page); // demo departures
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Change starting point" }).click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("park");
+  await page.getByRole("button", { name: "Choose Park Street", exact: true }).click();
+  await page.getByRole("combobox", { name: "Where to?" }).fill("kenmore");
+  await page.getByRole("button", { name: "Go to Kenmore" }).click();
+  await expect(page.getByRole("list", { name: "Step by step" }).getByText("Board the Green Line B, C or D")).toBeVisible();
+  await expect(page.getByText("Westbound platform, toward Boston College, Cleveland Circle or Riverside.")).toBeVisible();
+});
+
+test("Google alternatives: a subway route can be chosen, a bus route is information only", async ({ page }) => {
+  const stop = (id: string) => ({ name: id, lat: 0, lng: 0 });
+  const H = { name: "Harvard", lat: 42.373362, lng: -71.118956 }, P = { name: "Park Street", lat: 42.356395, lng: -71.062424 };
+  const ride = (over: object) => ({ kind: "transit", minutes: 12, vehicle: "SUBWAY", line: "Red Line", lineName: "Red Line", color: "#DA291C", headsign: "Ashmont", stops: 4, from: H, to: P, ...over });
+  await mockApis(page, {
+    routes: (route) => route.fulfill({ json: { provider: "google", routes: [
+      { minutes: 14, steps: [ride({})] }, // the same trip Bostie already offers: not repeated
+      { minutes: 31, steps: [{ kind: "walk", minutes: 3, metres: 200 }, ride({ vehicle: "BUS", line: "1", lineName: "Harvard - Nubian", headsign: "Nubian", stops: 9, from: stop("Mass Ave @ Holyoke St"), to: stop("Mass Ave @ Beacon St") }), { kind: "walk", minutes: 9, metres: 700 }] },
+      { minutes: 40, steps: [ride({ vehicle: "COMMUTER_TRAIN", line: "Fitchburg Line", lineName: "Fitchburg Line", from: stop("Porter"), to: stop("North Station") })] },
+    ] } }),
+  });
+  await seed(page);
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  const options = page.getByRole("region", { name: "Route options" });
+  const cards = options.getByTestId("google-route");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.first()).toContainText("1 toward Nubian");
+  await expect(cards.first()).toContainText("$1.70"); // the published bus fare, not Google's
+  await expect(cards.first()).toContainText("31 min");
+  await expect(cards.nth(1)).toContainText("Unavailable"); // Commuter Rail fare needs zones we do not have: never guessed
+  await expect(cards.first().getByRole("link", { name: /Open in Google Maps/ })).toHaveAttribute("href", /travelmode=transit/);
+  await expect(cards.first().getByRole("radio")).toHaveCount(0); // cannot be started as a guided journey
+  await expect(options.getByText("From Google")).toHaveCount(2); // the duplicate subway route was dropped
+  await cards.first().scrollIntoViewIfNeeded();
+  await shot(page, "23-google-routes");
+});
+
+test("Ride search: Enter with nothing matching explains instead of doing nothing", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/ride");
+  const box = page.getByRole("combobox", { name: "Where to?" });
+  await box.fill("zzzz");
+  await expect(page.getByText(/Nothing matches/)).toBeVisible();
+  await box.press("Enter");
+  await expect(page.getByRole("alert").filter({ hasText: "Pick a station or place from the list" })).toBeVisible();
+  await expect(page).toHaveURL(/\/ride/);
+});
+
+test("Ride: From and To fields, and starting from your current location", async ({ page, context }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 42.365486, longitude: -71.103802, accuracy: 20 }); // Central
+  await page.goto("/ride");
+  const from = page.getByRole("button", { name: "Change starting point" });
+
+  // Pick a starting station by hand.
+  await from.click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("kendall");
+  await page.getByRole("button", { name: "Choose Kendall/MIT", exact: true }).click();
+  await expect(from).toContainText("Kendall/MIT");
+
+  // Then switch to wherever you are.
+  await from.click();
+  const here = page.getByRole("option", { name: /Current location/ });
+  await expect(here).toBeVisible();
+  await shot(page, "24-ride-from");
+  await here.getByRole("button").click();
+  await expect(from).toContainText("Current location");
+  await expect(page.getByTestId("ride-from-note")).toContainText("Nearest station: Central");
+
+  await page.getByRole("combobox", { name: "Where to?" }).fill("park");
+  await page.getByRole("button", { name: "Go to Park Street", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Central to Park Street" })).toBeVisible();
+});
+
+test("Ride: a trip can start from any address or place, not only a station", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  const from = page.getByRole("button", { name: "Change starting point" });
+  await from.click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("1217 beacon");
+  const hit = page.getByRole("button", { name: /Start at 1217 Beacon Street/ });
+  await expect(hit).toContainText(/min walk .* to .+ station/); // says which station the trip boards at
+  await shot(page, "25-from-address");
+  await hit.click();
+  await expect(from).toContainText("1217 Beacon Street");
+  await expect(page.getByTestId("ride-from-note")).toContainText(/Starts at .+, a \d+ min walk/);
+
+  await page.getByRole("combobox", { name: "Where to?" }).fill("park");
+  await page.getByRole("button", { name: "Go to Park Street", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "1217 Beacon Street to Park Street" })).toBeVisible();
+  const steps = page.getByRole("list", { name: "Step by step" });
+  await expect(steps.getByRole("listitem").first()).toContainText(/Walk to .+From 1217 Beacon Street\./);
+
+  // A landmark works as a start too.
+  await page.getByRole("button", { name: "End journey" }).click();
+  await page.getByRole("button", { name: "Change starting point" }).click();
+  await page.getByRole("combobox", { name: "Starting point" }).fill("state house");
+  await page.getByRole("button", { name: /Start at Massachusetts State House/ }).click();
+  await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("Massachusetts State House");
 });

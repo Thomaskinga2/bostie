@@ -5,12 +5,13 @@ import { photoOf, PLACES, type Place } from "./places";
 
 export type GameMode = "mix" | "landmark" | "station" | "neighborhood" | "map";
 
-export const MODES: { id: GameMode; name: string; blurb: string }[] = [
-  { id: "mix", name: "Classic", blurb: "Anything in the city. Name what you see." },
-  { id: "landmark", name: "Landmarks", blurb: "Historic sites and icons." },
-  { id: "station", name: "Stations", blurb: "Which MBTA stop is this?" },
-  { id: "neighborhood", name: "Neighborhoods", blurb: "Read the streets." },
-  { id: "map", name: "Pin Drop", blurb: "Skip the name. Drop a pin on the map." },
+/** `photo` is a catalogue place that shows what the game looks like; `about` says how it is played. */
+export const MODES: { id: GameMode; name: string; blurb: string; about: string; photo: string }[] = [
+  { id: "mix", name: "Classic", blurb: "Anything in the city. Name what you see.", about: "A photo from anywhere in Boston. Type what it is.", photo: "custom-house" },
+  { id: "landmark", name: "Landmarks", blurb: "Historic sites and icons.", about: "A famous building or historic site. Name it.", photo: "state-house" },
+  { id: "station", name: "Stations", blurb: "Which MBTA stop is this?", about: "A photo of a T station. Say which stop it is.", photo: "stn-park-street" },
+  { id: "neighborhood", name: "Neighborhoods", blurb: "Read the streets.", about: "A street scene. Guess the neighborhood.", photo: "nbh-back-bay" },
+  { id: "map", name: "Pin Drop", blurb: "Skip the name. Drop a pin on the map.", about: "No typing: tap the map where you think the photo was taken.", photo: "nbh-north-end" },
 ];
 
 export const MAX_ATTEMPTS = 3;
