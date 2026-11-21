@@ -1,19 +1,31 @@
 {
-  "name": "scratch-2026-11-21-7f9541",
+  "name": "tquest",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "playwright test --project=logic --project=mobile --project=desktop",
+    "test:real": "REAL_API=1 playwright test --project=real",
+    "data:network": "node scripts/build-network.mjs",
+    "data:photos": "node scripts/fetch-wiki.mjs",
+    "data:seed": "node scripts/build-seed.mjs"
   },
   "dependencies": {
+    "@google/genai": "^3.6.1",
+    "@supabase/supabase-js": "^2.119.2",
+    "lucide-react": "^1.77.0",
+    "motion": "^14.14.0",
     "next": "16.4.6",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
