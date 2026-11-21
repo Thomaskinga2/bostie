@@ -1,5 +1,5 @@
 "use client";
-import { BatteryFull, Maximize2, Minimize2, RotateCcw, Signal, Sparkles, Wifi } from "lucide-react";
+import { BatteryFull, Maximize2, Minimize2, Play, RotateCcw, Signal, Sparkles, Wifi } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
@@ -44,6 +44,7 @@ function StatusBar() {
 /** Judge walkthrough. Demo Mode only. */
 function DeskLeft() {
   const resetAll = useStore((s) => s.resetAll);
+  const replayIntro = useStore((s) => s.replayIntro);
   const router = useRouter();
   return (
     <aside className="hidden w-[300px] shrink-0 flex-col self-stretch py-10 text-white framed:min-[1160px]:flex">
@@ -63,6 +64,15 @@ function DeskLeft() {
           label="Replay tips for this screen"
           className="h-11 w-full justify-center rounded-full bg-white/10 text-[14px] text-white hover:bg-white/15"
         />
+        <button
+          onClick={() => {
+            replayIntro();
+            router.push("/");
+          }}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-white/10 text-[14px] font-semibold text-white hover:bg-white/15"
+        >
+          <Play size={15} aria-hidden /> Replay intro
+        </button>
         <button
           onClick={() => {
             resetAll();

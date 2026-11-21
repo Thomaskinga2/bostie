@@ -543,3 +543,24 @@ test("Explore Boston: interests and budget give real destinations, directions an
   await expect(page.getByRole("heading", { name: "Park Street to Kenmore" })).toBeVisible();
   expect((await store(page)).events).toHaveLength(0); // nothing had to be completed first
 });
+
+test("Replay intro shows the opening again and keeps progress", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, {
+    events: [{ t: "station", id: "place-harsq", at: Date.now(), via: "demo" }],
+    xp: [{ key: "station:place-harsq", amount: 40, label: "Station stamp · Harvard", at: Date.now() }],
+  });
+  await page.goto("/passport");
+  await page.getByRole("main").getByRole("button", { name: "Replay intro" }).click();
+
+  await expect(page.getByRole("heading", { name: "Make every ride an adventure." })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0); // the app is hidden behind the opening
+  await page.getByRole("button", { name: "Start exploring" }).click();
+  await expect(page.getByRole("heading", { name: "What should we call you?" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await expect(page.getByRole("link", { name: "Explore Boston" })).toBeVisible(); // back on the map
+  const s = await store(page);
+  expect(s.name).toBe("Tester"); // a blank name keeps the old one
+  expect([s.events.length, s.xp.length, s.onboarded]).toEqual([1, 1, true]);
+});

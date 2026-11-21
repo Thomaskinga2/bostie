@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 4;
+export const GUIDE_VERSION = 5;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -97,7 +97,7 @@ export const TOUR: Record<Scene, Spot[]> = {
   passport: [
     { target: "passport-cover", title: "Your passport", body: "Level, XP toward the next level, and your streak. One rest day never breaks a streak." },
     { target: "stamp-tabs", title: "148 stamps to collect", body: "A stamp for every station, every landmark, and three collections. Tap any stamp to see how to earn it." },
-    { target: "passport-settings", title: "Demo mode and reset", body: "Turn demo mode off for live MBTA data and your real location, or reset to start clean." },
+    { target: "passport-settings", title: "Demo mode, intro and reset", body: "Turn demo mode off for live MBTA data and your real location, replay the opening, or reset to start clean." },
   ],
 };
 

@@ -70,6 +70,8 @@ type State = Progress & {
   replayTips: (scene: string | null) => void;
   setName: (name: string) => void;
   onboard: (demo: boolean) => void;
+  /** Shows the opening screens again. Progress, name and settings are kept. */
+  replayIntro: () => void;
   setDemo: (demo: boolean) => void;
   resetAll: () => void;
   requestLocation: () => void;
@@ -141,6 +143,7 @@ export const useStore = create<State>()(
         set((s) => ({ tipsOff: false, tipsSeen: Object.fromEntries(Object.entries(s.tipsSeen).filter(([k]) => k !== scene)) })),
       setName: (name) => set({ name: name.trim().slice(0, 24) || "Explorer" }),
       onboard: (demo) => set({ onboarded: true, demo }),
+      replayIntro: () => set({ onboarded: false }),
       setDemo: (demo) => set({ demo }),
       resetAll: () =>
         // Tips come back too, so the next judge gets the full guided first run.

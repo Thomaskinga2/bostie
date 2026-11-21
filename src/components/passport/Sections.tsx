@@ -1,6 +1,7 @@
 "use client";
-import { TrainFront, X } from "lucide-react";
+import { Play, TrainFront, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
 import { GeminiChip } from "@/components/shell/Showcase";
@@ -245,7 +246,9 @@ export function Settings() {
   const demo = useStore((s) => s.demo);
   const setDemo = useStore((s) => s.setDemo);
   const resetAll = useStore((s) => s.resetAll);
+  const replayIntro = useStore((s) => s.replayIntro);
   const xp = useStore((s) => s.xp);
+  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
 
   return (
@@ -299,6 +302,18 @@ export function Settings() {
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <GeminiChip className="h-10" />
+        {/* Shows the opening screens again without touching progress: handy when presenting. */}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-10"
+          onClick={() => {
+            replayIntro();
+            router.push("/");
+          }}
+        >
+          <Play size={15} aria-hidden /> Replay intro
+        </Button>
         {confirming ? (
           <div className="flex items-center gap-2" role="group" aria-label="Confirm reset">
             {/* plain button: ui.Button's variant background would fight the destructive red */}
