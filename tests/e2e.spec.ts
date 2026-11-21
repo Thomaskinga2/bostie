@@ -172,7 +172,12 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await expect(fare.getByRole("link", { name: "Official MBTA fares" })).toHaveAttribute("href", "https://www.mbta.com/fares");
   await fare.scrollIntoViewIfNeeded();
   await shot(page, "03b-fare");
+  await expect(page.getByTestId("trip-breakdown").first().getByText("Red Line to Park Street")).toBeVisible(); // minutes for each part
   await page.getByRole("button", { name: control("begin", 0) }).click();
+  // Once the journey starts, a navigation map shows the route and the rider.
+  await expect(page.getByRole("region", { name: "Navigation map" }).getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Navigation map" }).getByText("Demo position")).toBeVisible();
+  await shot(page, "03c-journey-map");
   await page.getByRole("button", { name: control("begin", 1) }).click();
   await readTips();
   await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
@@ -695,7 +700,10 @@ test("Ride search finds any address or place and plans the best MBTA trip there"
   await expect(page).toHaveURL(/\/journey$/);
   await expect(page.getByRole("heading", { name: "Harvard to Museum of Fine Arts" })).toBeVisible();
   await expect(page.getByText(/then a \d+ min walk from/)).toBeVisible();
-  await expect(page.getByText("Walk to Museum of Fine Arts")).toBeVisible();
+  await expect(page.getByText("Walk to Museum of Fine Arts").first()).toBeVisible();
+  const parts = page.getByTestId("trip-breakdown").first();
+  await expect(parts.getByText(/Change at /)).toBeVisible(); // train, change, train, walk: each with its minutes
+  await expect(parts.getByText("Walk to Museum of Fine Arts")).toBeVisible();
   await expect(page.getByRole("region", { name: "Fare" }).getByTestId("fare-total")).toHaveText("$2.40");
   await shot(page, "22b-journey-to-place");
   const j = (await store(page)).journey;
@@ -718,4 +726,171 @@ test("Ride search finds any address or place and plans the best MBTA trip there"
   await search.fill("park street ch");
   await expect(results.getByText("Address search is unavailable right now.")).toBeVisible();
   await expect(results.getByRole("button", { name: "Go to Park Street Church, by Park Street station" })).toBeVisible();
+});
+
+test("automatic tracking: the demo ride plays itself, and you can switch to manual", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await expect(page.getByRole("radio", { name: /Manual/ })).toHaveAttribute("aria-checked", "true"); // manual is the default
+  await page.getByRole("radio", { name: /Automatic/ }).click();
+  await shot(page, "23-tracking-choice");
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await expect(page.getByTestId("tracking-status")).toContainText("the demo ride is playing by itself");
+
+  // No taps: it walks, waits, boards and rides. Rewards pause it until dismissed.
+  const deadline = Date.now() + 70_000;
+  while (Date.now() < deadline && !(await page.getByRole("heading", { name: "You have arrived at Park Street" }).isVisible())) {
+    await dismissRewards(page);
+    await page.waitForTimeout(500);
+  }
+  await expect(page.getByRole("heading", { name: "You have arrived at Park Street" })).toBeVisible();
+  expect((await store(page)).events.filter((e: { t: string }) => e.t === "station")).toHaveLength(5);
+
+  // Manual control is always one tap away.
+  await dismissRewards(page);
+  await page.getByRole("button", { name: "Go manual" }).click();
+  await expect(page.getByTestId("tracking-status")).toContainText("Manual mode");
+  await page.getByRole("button", { name: "Explore nearby" }).click();
+  await expect(page.getByRole("heading", { name: "Around Park Street" })).toBeVisible();
+});
+
+test("automatic tracking follows real location, and a blocked permission falls back to manual", async ({ page, context }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  const at = { harvard: { latitude: 42.373362, longitude: -71.118956 }, central: { latitude: 42.365486, longitude: -71.103802 }, between: { latitude: 42.3698, longitude: -71.1115 } };
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...at.between, accuracy: 20 });
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Change starting station" }).click();
+  await page.getByRole("combobox", { name: "Starting station" }).fill("harvard");
+  await page.getByRole("button", { name: "Choose Harvard", exact: true }).click();
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await page.getByRole("radio", { name: /Automatic/ }).click();
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await expect(page.getByTestId("tracking-status")).toContainText("following your location");
+  await expect(page.getByRole("heading", { name: "Walk to Harvard" })).toBeVisible(); // not there yet
+
+  await context.setGeolocation({ ...at.harvard, accuracy: 15 });
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible(); // reached the station
+
+  await context.setGeolocation({ ...at.central, accuracy: 15 });
+  await dismissRewards(page);
+  await expect(page.getByRole("heading", { name: "Next stop: Kendall/MIT" })).toBeVisible({ timeout: 15_000 }); // boarded, and Central was reached
+  await dismissRewards(page);
+  const stations = (await store(page)).events.filter((e: { t: string }) => e.t === "station").map((e: { id: string }) => e.id);
+  expect(stations).toEqual(["place-harsq", "place-cntsq"]);
+  expect((await store(page)).trail.length, "Automatic mode records the route for the heat map").toBeGreaterThanOrEqual(2);
+
+  // Permission refused: the journey quietly becomes manual instead of getting stuck.
+  await page.getByRole("button", { name: "End journey" }).click();
+  await context.clearPermissions();
+  await context.setGeolocation(null);
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await page.getByRole("radio", { name: /Automatic/ }).click();
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await expect(page.getByTestId("tracking-status")).toContainText(/manual mode/i, { timeout: 30_000 });
+  await page.getByRole("button", { name: /I am at the station/ }).click();
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+});
+
+/** Replaces the phone's share menu with a recorder, so a test can see what would be shared. */
+const stubShare = (page: Page) =>
+  page.addInitScript(() => {
+    const w = window as unknown as { shared: unknown[] };
+    w.shared = [];
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (d: ShareData) => void w.shared.push({ text: d.text, files: (d.files ?? []).map((f) => ({ name: f.name, type: f.type, size: f.size })) }),
+    });
+  });
+const noShare = (page: Page) =>
+  page.addInitScript(() => {
+    for (const k of ["share", "canShare"]) Object.defineProperty(navigator, k, { configurable: true, value: undefined });
+  });
+const keep = (name: string) => `screenshots/${test.info().project.name}/${name}`;
+
+test("sharing a discovery: the picture goes to the phone's share menu, and the photo is not kept", async ({ page }) => {
+  await mockApis(page);
+  await stubShare(page);
+  await seed(page);
+  await page.goto("/scan");
+  await upload(page);
+  await dismissRewards(page);
+  await page.getByRole("button", { name: "Share this discovery" }).click();
+  const sheet = page.getByRole("dialog", { name: "Share this discovery" });
+  await expect(sheet.getByRole("img", { name: /Preview/ })).toBeVisible();
+  await shot(page, "20-share-discovery");
+  await sheet.getByRole("button", { name: "Share", exact: true }).click();
+  await expect(sheet.getByText("Shared.")).toBeVisible();
+  const shared = await page.evaluate(() => (window as unknown as { shared: { text: string; files: { name: string; type: string; size: number }[] }[] }).shared);
+  expect(shared).toHaveLength(1);
+  expect(shared[0].text).toContain("Massachusetts State House");
+  expect(shared[0].files).toHaveLength(1);
+  expect(shared[0].files[0]).toMatchObject({ name: "bostie-state-house.png", type: "image/png" });
+  expect(shared[0].files[0].size).toBeGreaterThan(5000);
+  expect(JSON.stringify(await store(page))).not.toContain("data:image"); // the photo never reaches storage
+});
+
+test("sharing without a share menu saves the picture instead", async ({ page }) => {
+  await mockApis(page);
+  await noShare(page);
+  await seed(page);
+  await page.goto("/scan");
+  await upload(page);
+  await dismissRewards(page);
+  await page.getByRole("button", { name: "Share this discovery" }).click();
+  const sheet = page.getByRole("dialog", { name: "Share this discovery" });
+  await expect(sheet.getByRole("img", { name: /Preview/ })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Share", exact: true })).toHaveCount(0);
+  const [download] = await Promise.all([page.waitForEvent("download"), sheet.getByRole("button", { name: "Save image" }).click()]);
+  expect(download.suggestedFilename()).toBe("bostie-state-house.png");
+  await download.saveAs(keep("share-discovery.png"));
+});
+
+test("My day: today's places, the heat map, sharing the day and clearing location history", async ({ page }) => {
+  const now = Date.now();
+  const yesterday = now - 86_400_000;
+  const walk = (i: number, at: number) => ({ lat: 42.3564 + i * 0.0004, lng: -71.0624 + i * 0.0003, at });
+  await mockApis(page);
+  await noShare(page);
+  await seed(page, {
+    events: [
+      { t: "station", id: "place-alfcl", at: yesterday, via: "ride" },
+      { t: "station", id: "place-harsq", at: now - 3000, via: "ride" },
+      { t: "station", id: "place-pktrm", at: now - 2000, via: "ride" },
+      { t: "landmark", id: "state-house", at: now - 1000, verification: "simulated" },
+      { t: "journey", id: "j1", from: "place-harsq", to: "place-pktrm", stops: 4, lines: ["Red"], minutes: 9, km: 4.2, demo: false, at: now - 1500 },
+    ],
+    xp: [{ key: "station:place-harsq", amount: 25, at: now - 3000, label: "Station" }],
+    trail: Array.from({ length: 12 }, (_, i) => walk(i, now - (12 - i) * 20_000)),
+  });
+  await page.goto("/passport");
+  const day = page.getByRole("region", { name: "My day" });
+  await expect(day.getByRole("list", { name: "Places today" })).toContainText("Park Street");
+  await expect(day.getByRole("list", { name: "Places today" })).toContainText("Massachusetts State House");
+  await expect(day.getByRole("list", { name: "Places today" })).not.toContainText("Alewife");
+
+  const heat = page.getByTestId("heat-map");
+  const all = Number(await heat.getAttribute("data-points"));
+  await day.getByRole("radio", { name: "Today" }).click();
+  await expect(heat).not.toHaveAttribute("data-points", String(all)); // yesterday's Alewife drops out
+  expect(Number(await heat.getAttribute("data-points"))).toBe(all - 1);
+  await heat.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(800);
+  await shot(page, "21-my-day");
+
+  await day.getByRole("button", { name: "Share my day" }).click();
+  const sheet = page.getByRole("dialog", { name: "Share my day" });
+  await expect(sheet.getByText(/exact route you travelled/)).toBeVisible(); // the rider is told the route is in the picture
+  await expect(sheet.getByRole("img", { name: /Preview/ })).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent("download"), sheet.getByRole("button", { name: "Save image" }).click()]);
+  await download.saveAs(keep("share-day.png"));
+  await sheet.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Clear history" }).click();
+  expect((await store(page)).trail).toEqual([]);
+  await expect(page.getByText("Nothing saved yet.")).toBeVisible();
 });

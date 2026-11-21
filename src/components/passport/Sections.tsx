@@ -247,6 +247,8 @@ export function Settings() {
   const setDemo = useStore((s) => s.setDemo);
   const resetAll = useStore((s) => s.resetAll);
   const replayIntro = useStore((s) => s.replayIntro);
+  const trailLength = useStore((s) => s.trail.length);
+  const clearTrail = useStore((s) => s.clearTrail);
   const xp = useStore((s) => s.xp);
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -299,6 +301,18 @@ export function Settings() {
           </ol>
         )}
       </details>
+
+      <div className="mt-5 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[16px] font-semibold">Location history</p>
+          <p className="mt-0.5 text-[13.5px] leading-snug text-ink-soft">
+            In Automatic mode your route is saved on this device for your heat map. It is never uploaded. {trailLength ? `${trailLength} points saved.` : "Nothing saved yet."}
+          </p>
+        </div>
+        <Button size="sm" variant="secondary" className="h-10 shrink-0" onClick={clearTrail} disabled={!trailLength}>
+          Clear history
+        </Button>
+      </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <GeminiChip className="h-10" />

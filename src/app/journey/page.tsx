@@ -1,17 +1,21 @@
 "use client";
-import { Camera, Check, ChevronLeft, CreditCard, Footprints, Gamepad2, ShieldCheck } from "lucide-react";
+import { Camera, Check, ChevronLeft, CreditCard, Footprints, Gamepad2, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
+import type { MapLine, MapMarker } from "@/components/map/CityMap";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Arrivals, useNextDeparture } from "@/components/Arrivals";
 import { FareSummary } from "@/components/FareSummary";
 import { Button, cx, Empty, LineDots, LinePill, SourceBadge, StationSign } from "@/components/ui";
 import { derive, STAMP } from "@/lib/gamification";
+import { useNow } from "@/lib/api";
 import { formatFare, journeyFare } from "@/lib/fares";
 import { distanceKm, formatDistance, walkMinutes } from "@/lib/geo";
 import { legDirection, LINES, rideMinutes, routeLabel, routeOptions, STATION, type Leg, type Plan, type RouteOption } from "@/lib/network";
 import { landmarksNearStation } from "@/lib/places";
 import { useStore, useWhere, type Journey, type Stage } from "@/lib/store";
+import { useJourneyTracking } from "@/lib/tracking";
 import { StampArt } from "@/components/Stamp";
 
 const STEP_NAMES = ["Plan", "Walk", "Wait", "Board", "Ride", "Arrive", "Explore", "Done"];
@@ -91,11 +95,61 @@ function RouteSummary({ journey }: { journey: Journey }) {
   );
 }
 
+const CityMap = dynamic(() => import("@/components/map/CityMap").then((m) => m.CityMap), {
+  ssr: false,
+  loading: () => <div className="size-full animate-pulse bg-sand" />,
+});
+
+/** Minutes each change of line is expected to take (the planner's own allowance). */
+const CHANGE_MIN = 4;
+type Part = { kind: "walk" | "train" | "change"; minutes: number; label: string; color?: string };
+
+/** The trip as a sequence of timed parts: walk in, each train, each change, walk out. */
+function tripParts(plan: Plan, walkInMin: number | null, walkOut?: { minutes: number; name: string }): Part[] {
+  const parts: Part[] = [];
+  if (walkInMin && walkInMin > 1) parts.push({ kind: "walk", minutes: walkInMin, label: `Walk to ${STATION[plan.from].name}` });
+  plan.legs.forEach((leg, i) => {
+    if (i > 0) parts.push({ kind: "change", minutes: CHANGE_MIN, label: `Change at ${STATION[leg.from].name}` });
+    parts.push({ kind: "train", minutes: leg.minutes, label: `${routeLabel(leg.route)} to ${STATION[leg.to].name}`, color: LINES[leg.line].color });
+  });
+  if (walkOut) parts.push({ kind: "walk", minutes: walkOut.minutes, label: `Walk to ${walkOut.name}` });
+  return parts;
+}
+
+/** A proportional bar plus a labelled row per part, so every minute of the trip is accounted for. */
+function TripBreakdown({ parts }: { parts: Part[] }) {
+  return (
+    <span className="mt-3 block" data-testid="trip-breakdown">
+      <span className="flex h-2.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+        {parts.map((p, i) => (
+          <span key={i} style={{ flexGrow: Math.max(1, p.minutes), background: p.color ?? (p.kind === "walk" ? "#8a8f84" : "#ddd3bc") }} />
+        ))}
+      </span>
+      <span className="mt-2 block space-y-1">
+        {parts.map((p, i) => {
+          const Icon = p.kind === "walk" ? Footprints : p.kind === "train" ? TrainFront : Repeat;
+          return (
+            <span key={i} className="flex items-center gap-2 text-[13.5px]">
+              <Icon size={15} className="shrink-0" style={{ color: p.color ?? "#4d564f" }} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{p.label}</span>
+              <span className="shrink-0 font-bold tabular-nums">{p.minutes} min</span>
+            </span>
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
 const sameRoute = (a: Plan, b: Plan) => a.legs.length === b.legs.length && a.legs.every((l, i) => l.line === b.legs[i].line && l.from === b.legs[i].from && l.to === b.legs[i].to);
 
 /** One way to make the trip: time, changes, fare and the next train, at a glance. */
-function RouteCard({ option, selected, demo, onChoose }: { option: RouteOption; selected: boolean; demo: boolean; onChoose?: () => void }) {
+function RouteCard({ option, selected, demo, walkInMin, walkOut, onChoose }: {
+  option: RouteOption; selected: boolean; demo: boolean; walkInMin: number | null; walkOut?: { minutes: number; name: string }; onChoose?: () => void;
+}) {
   const { plan, tag } = option;
+  const parts = tripParts(plan, walkInMin, walkOut);
+  const total = parts.reduce((n, p) => n + p.minutes, 0);
   const first = plan.legs[0];
   const next = useNextDeparture(first.from, { route: first.route, direction: legDirection(first.route, first.from, first.to) }, demo);
   const changes = plan.legs.length - 1;
@@ -106,10 +160,14 @@ function RouteCard({ option, selected, demo, onChoose }: { option: RouteOption; 
         <span className="font-display text-[22px] font-bold leading-none text-forest">{formatFare(journeyFare(plan).totalCents)}</span>
       </span>
       <span className="mt-2 flex items-baseline gap-3">
-        <span className="text-[22px] font-bold leading-none">{plan.minutes} min</span>
-        <span className="text-[14px] text-ink-soft">{changes ? `${changes} change${changes > 1 ? "s" : ""}` : "No changes"}</span>
+        <span className="text-[22px] font-bold leading-none">{total} min</span>
+        <span className="text-[14px] text-ink-soft">
+          {total !== plan.minutes ? "door to door, " : ""}
+          {changes ? `${changes} change${changes > 1 ? "s" : ""}` : "no changes"}
+        </span>
       </span>
-      <span className="mt-2 flex items-center gap-2 text-[13.5px] text-ink-soft">
+      <TripBreakdown parts={parts} />
+      <span className="mt-2.5 flex items-center gap-2 border-t border-line pt-2.5 text-[13.5px] text-ink-soft">
         <LineDots lines={[...new Set(plan.legs.map((l) => l.line))]} size={11} />
         {next ? (
           <span>
@@ -130,7 +188,7 @@ function RouteCard({ option, selected, demo, onChoose }: { option: RouteOption; 
 }
 
 /** The route comparison: every sensible way to make the trip, sortable by time or cost. */
-function RouteOptions({ plan, demo }: { plan: Plan; demo: boolean }) {
+function RouteOptions({ plan, demo, walkInMin, walkOut }: { plan: Plan; demo: boolean; walkInMin: number | null; walkOut?: { minutes: number; name: string } }) {
   const choosePlan = useStore((s) => s.choosePlan);
   const [sort, setSort] = useState<"time" | "cost">("time");
   const options = useMemo(() => routeOptions(plan.from, plan.to), [plan.from, plan.to]);
@@ -153,13 +211,117 @@ function RouteOptions({ plan, demo }: { plan: Plan; demo: boolean }) {
       )}
       <div role={many ? "radiogroup" : undefined} aria-label={many ? "Routes" : undefined} className="space-y-2">
         {sorted.map((o, i) => (
-          <RouteCard key={i} option={o} selected={sameRoute(o.plan, plan)} demo={demo} onChoose={many ? () => choosePlan(o.plan) : undefined} />
+          <RouteCard key={i} option={o} selected={sameRoute(o.plan, plan)} demo={demo} walkInMin={walkInMin} walkOut={walkOut} onChoose={many ? () => choosePlan(o.plan) : undefined} />
         ))}
       </div>
       {many && sort === "cost" && new Set(options.map(cost)).size === 1 && (
         <p className="mt-2 text-[13px] text-ink-soft">Every subway route costs the same: one fare covers changes between lines.</p>
       )}
     </section>
+  );
+}
+
+/** Live navigation map: the route, where the rider is, and where they are heading next. */
+function JourneyMap({ journey }: { journey: Journey }) {
+  const where = useWhere();
+  const { plan, stage, walkTo } = journey;
+  const leg = plan.legs[journey.leg];
+  const at = where.at;
+  const view = useMemo(() => {
+    const pt = (id: string) => ({ lat: STATION[id].lat, lng: STATION[id].lng });
+    const lines: MapLine[] = plan.legs.map((l, i) => ({ id: `leg-${i}`, color: LINES[l.line].color, emphasis: true, path: l.stops.map(pt) }));
+    if (at && stage === "walking") lines.push({ id: "walk-in", color: "#1f4b3a", dashed: true, emphasis: true, path: [at, pt(leg.from)] });
+    if (walkTo) lines.push({ id: "walk-out", color: "#1f4b3a", dashed: true, emphasis: true, path: [pt(plan.to), { lat: walkTo.lat, lng: walkTo.lng }] });
+
+    const reached = (legIndex: number, stopIndex: number) =>
+      legIndex < journey.leg || (legIndex === journey.leg && (["arriving", "exploring", "complete", "transferring"].includes(stage) || (stage === "traveling" && stopIndex < journey.stop) || (stopIndex === 0 && stage !== "walking" && stage !== "waiting")));
+    const markers: MapMarker[] = [];
+    plan.legs.forEach((l, li) => l.stops.forEach((id, si) => {
+      if (!markers.some((m) => m.id === id)) markers.push({ id, kind: "station", label: STATION[id].name, color: LINES[l.line].color, done: reached(li, si), ...pt(id) });
+    }));
+    if (walkTo) markers.push({ id: "destination", kind: "answer", label: walkTo.name, lat: walkTo.lat, lng: walkTo.lng });
+    if (at) markers.push({ id: "user", kind: "user", label: where.source === "simulated" ? "You (demo)" : "You", lat: at.lat, lng: at.lng });
+
+    // Frame what matters right now: the rider and the next thing they are heading for.
+    const next = stage === "walking" ? [pt(leg.from)]
+      : stage === "traveling" ? [pt(leg.stops[journey.stop - 1]), pt(leg.stops[journey.stop])]
+      : stage === "exploring" || stage === "arriving" ? [pt(plan.to), ...(walkTo ? [{ lat: walkTo.lat, lng: walkTo.lng }] : [])]
+      : [pt(leg.from), pt(leg.to)];
+    const fit = [...(at ? [{ lat: at.lat, lng: at.lng }] : []), ...next];
+    const focus = stage === "traveling" ? leg.stops[journey.stop] : stage === "walking" || stage === "waiting" || stage === "boarding" ? leg.from : walkTo ? "destination" : plan.to;
+    return { lines, markers, fit, focus };
+  }, [plan, stage, walkTo, leg, journey.leg, journey.stop, at, where.source]);
+
+  return (
+    <section data-tour="journey-map" aria-label="Navigation map" className="relative mx-5 mt-4 h-[230px] shrink-0 overflow-hidden rounded-3xl border border-line">
+      <CityMap className="size-full" markers={view.markers} lines={view.lines} fit={view.fit} selectedId={view.focus} />
+      <span className="pointer-events-none absolute left-2.5 top-2.5 rounded-full bg-card/95 px-2.5 py-1 text-[12px] font-semibold shadow-card">
+        {at ? (where.source === "simulated" ? "Demo position" : "Your live position") : "Route map"}
+      </span>
+    </section>
+  );
+}
+
+/** Automatic or manual: chosen before the journey starts, changeable at any time. */
+function TrackingChoice({ journey }: { journey: Journey }) {
+  const setTracking = useStore((s) => s.setTracking);
+  const mode = journey.tracking ?? "manual";
+  const options = [
+    { id: "auto" as const, Icon: LocateFixed, title: "Automatic", body: journey.demo ? "The demo ride plays by itself, stop by stop." : "Follows your live location, moves through the steps for you, and adds your route to your heat map." },
+    { id: "manual" as const, Icon: Hand, title: "Manual", body: "You tap to confirm each step. Works everywhere, including underground." },
+  ];
+  return (
+    <section data-tour="tracking-mode" aria-labelledby="tracking-h" className="mt-5">
+      <h2 id="tracking-h" className="text-[20px] font-bold">How should Bostie follow your trip?</h2>
+      <div role="radiogroup" aria-label="Tracking mode" className="mt-2 space-y-2">
+        {options.map(({ id, Icon, title, body }) => (
+          <button
+            key={id}
+            role="radio"
+            aria-checked={mode === id}
+            onClick={() => setTracking(id)}
+            className={cx("flex w-full items-start gap-3.5 rounded-2xl border bg-card p-3.5 text-left", mode === id ? "border-forest shadow-card ring-1 ring-forest" : "border-line")}
+          >
+            <Icon size={22} className={cx("mt-0.5 shrink-0", mode === id ? "text-forest" : "text-ink-faint")} aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-[16.5px] font-bold">{title}</span>
+              <span className="block text-[13.5px] leading-snug text-ink-soft">{body}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[12.5px] text-ink-faint">
+        {journey.demo ? "Demo journeys use a simulated position." : "Automatic mode asks for your location when you start. It stays on your device and is never uploaded."}
+      </p>
+    </section>
+  );
+}
+
+/** What the tracker is doing right now, and a one-tap way to switch modes mid-journey. */
+function TrackingStatus({ journey }: { journey: Journey }) {
+  const setTracking = useStore((s) => s.setTracking);
+  const track = useJourneyTracking();
+  const now = useNow(5000);
+  const auto = journey.tracking === "auto";
+  const age = track.lastFixAt ? Math.round((now - track.lastFixAt) / 1000) : null;
+  const stale = age !== null && age > 40;
+  if (journey.stage === "planning" || journey.stage === "complete") return null;
+  const text = !auto
+    ? track.status === "blocked" ? "Location is blocked for this site, so you are in manual mode."
+      : track.status === "unsupported" ? "This browser cannot share location, so you are in manual mode."
+      : "Manual mode: tap the button as you reach each step."
+    : track.status === "simulated" ? "Automatic: the demo ride is playing by itself."
+      : track.status === "asking" ? "Automatic: waiting for your location…"
+      : stale ? "No GPS signal right now (common underground). Tap the button to confirm the step."
+      : `Automatic: following your location${track.accuracyM ? `, accurate to about ${track.accuracyM} m` : ""}.`;
+  return (
+    <div role="status" data-testid="tracking-status" className={cx("mx-5 mt-4 flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px]", auto && !stale ? "bg-moss text-forest-deep" : "bg-sand text-ink-soft")}>
+      {auto ? <LocateFixed size={17} className="shrink-0" aria-hidden /> : <Hand size={17} className="shrink-0" aria-hidden />}
+      <span className="min-w-0 flex-1 leading-snug">{text}</span>
+      <button onClick={() => setTracking(auto ? "manual" : "auto")} className="shrink-0 font-semibold text-forest underline underline-offset-2">
+        {auto ? "Go manual" : "Go automatic"}
+      </button>
+    </div>
   );
 }
 
@@ -235,6 +397,9 @@ export default function JourneyPage() {
         ))}
       </ol>
 
+      <TrackingStatus journey={journey} />
+      {stage !== "planning" && stage !== "complete" && <JourneyMap journey={journey} />}
+
       <div className="px-5 pt-5">
         <h1 className="text-[29px] font-bold leading-[1.08]">{v.title}</h1>
         <p className="mt-2 text-[16px] leading-snug text-ink-soft">{v.body}</p>
@@ -243,12 +408,13 @@ export default function JourneyPage() {
       <div className="flex-1 px-5 pt-5">
         {stage === "planning" && (
           <>
-            <RouteOptions plan={plan} demo={demo} />
+            <RouteOptions plan={plan} demo={demo} walkInMin={walkKm !== null ? walkMinutes(walkKm) : null} walkOut={walkTo ? { minutes: walkTo.minutes, name: walkTo.name } : undefined} />
             <RouteSummary journey={journey} />
             <p className="mt-3 text-[13px] text-ink-soft">
               Route computed from the MBTA station network. Ride times are estimates from distance, not live predictions.
             </p>
             <FareSummary plan={plan} className="mt-4" />
+            <TrackingChoice journey={journey} />
             <StationSign id={plan.from} className="mt-5" />
             <Arrivals stationId={plan.from} demo={demo} only={{ route: leg.route, direction }} limit={3} className="mt-3 px-1" />
           </>

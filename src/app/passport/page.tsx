@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Cover, Stats } from "@/components/passport/Cover";
+import { MyDay } from "@/components/passport/MyDay";
 import { Badges, Journal, Lines, Saved, Settings } from "@/components/passport/Sections";
 import { Stamps } from "@/components/passport/Stamps";
 import { derive, streakFor } from "@/lib/gamification";
@@ -17,6 +18,7 @@ export default function PassportPage() {
     <div data-scene="passport" className="scroll-area h-full">
       <Cover now={now} />
       <Stats d={d} />
+      <MyDay now={now} />
       <Stamps d={d} />
       <Lines d={d} />
       <Badges d={d} streak={streak} />

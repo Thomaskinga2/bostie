@@ -30,8 +30,9 @@ The app runs with only `GEMINI_API_KEY`. Without it, transit, the map, stamps an
 | Demo mode | A scripted Harvard → Central → Kendall/MIT → Charles/MGH → Park Street ride with simulated departures and position. | Always labelled **Demo data**. Gemini calls in demo mode are real. |
 | Landmark scanner | One multimodal Gemini call: photo + player position + a 20-landmark catalogue with visual cues and reference notes → schema-constrained JSON. | Deterministic checks decide whether a stamp is granted (see below). |
 | Guess Boston | Photo guessing game. Gemini links free-text guesses to catalogue entries, writes adaptive hints, writes the debrief and picks the next round from a server-built pool. | Answers, scoring, difficulty tiers and XP are all code. |
-| Gamification | XP ledger, 12 levels, streaks, 10 achievements, 6 challenges, 148 stamps in five rarities. | One pure engine (`src/lib/gamification.ts`); every reward is an idempotent transaction. |
+| Gamification | XP ledger, 12 levels, streaks, 10 achievements, 6 challenges, 148 stamps. | One pure engine (`src/lib/gamification.ts`); every reward is an idempotent transaction. |
 | Passport | Stamp collection with search and filters, line completion, badges, journey and discovery history, saved places, XP ledger. | |
+| Sharing, My day and heat map | After a landmark stamp, **Share this discovery** draws a 9:16 picture from the rider's photo and hands it to the phone's share menu (Instagram, Facebook, anything installed); elsewhere it saves the image. Passport → **My day** lists today's places, shows a heat map (All time / Today) and shares a picture of the day. | A website cannot post into another app directly, so the rider picks the app. The scan photo is used once and never stored. In Automatic mode the GPS route is saved on the device only (never synced), capped at 4,000 points, and cleared from Passport → Settings → **Clear history**. The shared day picture shows the exact route, and says so before sharing. |
 | Adventure map (home) | Stations, lines, landmarks, saved places, position, suggested walk, active journey. | Google Maps when a key is set. Otherwise OpenStreetMap street tiles with Bostie's lines and markers drawn on top; if tiles cannot load it falls back to a labelled schematic. |
 | Explore Boston (Discover) | Choose a start, interests and a budget; get destination cards with the nearest station, travel time, why it fits, Get directions and Save. | Deterministic: places come from the catalogue and travel times from the route planner. Budget is a labelled estimate. No quest required. |
 
@@ -93,7 +94,7 @@ Decisions worth knowing:
 
 - **State is two append-only logs**: events (what happened) and an XP ledger keyed by transaction id. Stamps, level, streak, line progress and statistics are derived, so they cannot drift, and replaying an event is a no-op. That is the duplicate-reward guarantee.
 - **Station stamps are collected by riding through.** There is no GPS underground, so the rider confirms each stop. Stamps record how they were collected (ride, demo).
-- **Rarity is rule-based**: common (single-line station), uncommon (transfer hub), rare (end-of-line terminal, or a downtown landmark), epic (a landmark more than 1.5 km from Park Street, or the four-line set), legendary (complete the Freedom Trail or the Red Line).
+- **No rarity tiers are shown.** Stamps are simply collected or locked. An internal tier still picks each stamp's ink colour.
 - **Streaks** count any activity, including a game round, on the player's local calendar day, and forgive one rest day. Nobody has to make an unnecessary trip.
 - **Cache Components is off** (`next.config.ts`): every screen reads the player's local progress, so there is no server-rendered content to cache.
 

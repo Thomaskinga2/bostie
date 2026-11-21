@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 8;
+export const GUIDE_VERSION = 12;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -53,12 +53,14 @@ export const TOUR: Record<Scene, Spot[]> = {
   ],
   "journey-plan": [
     { target: "journey-progress", title: "Eight stages", body: "From planning to done. The bar fills as you move through the trip." },
-    { target: "route-options", title: "Ways to go", body: "Each route shows its time, changes, fare and the next train. When there is more than one, sort by fastest or cheapest." },
+    { target: "route-options", title: "Ways to go", body: "Each route shows the fare, the next train and the minutes for every part: walking, each train and each change. Sort by fastest or cheapest." },
     { target: "route-summary", title: "Your route", body: "Line, direction and stops come from the MBTA network. Ride times are estimates, and labelled that way." },
     { target: "fare-summary", title: "What it costs, how to pay", body: "The fare is MBTA's published price, with the ways to pay that this service accepts. Open it for the breakdown." },
+    { target: "tracking-mode", title: "Automatic or manual", body: "Automatic follows your live location and moves the journey on for you. Manual lets you confirm each step yourself. You can switch at any time." },
     { target: "journey-action", title: "One button moves you on", body: "Each stage has a single action. Tap “Start journey” when you are ready." },
   ],
   "journey-wait": [
+    { target: "journey-map", title: "Your navigation map", body: "The route, the stations ahead and where you are. In automatic mode the dot follows your live location." },
     { target: "departures", title: "Only your trains", body: "Departures are filtered to your line and direction." },
     { target: "play-while-waiting", title: "Make the wait fun", body: "Play a round of Guess Boston here, then tap the gold strip to come back." },
     { target: "journey-action", title: "Boarding earns a stamp", body: "When the train pulls in, tap “My train is here” to collect your first station stamp." },
@@ -92,12 +94,14 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "scan-samples", title: "Not in Boston?", body: "Tap a sample photo of a nearby landmark. The Gemini call is real either way." },
   ],
   "scan-result": [
-    { target: "scan-stamp", title: "Your new stamp", body: "Its rarity comes from a published rule, shown here, never from the AI." },
+    { target: "scan-stamp", title: "Your new stamp", body: "A landmark stamp for your passport. It is only granted when the checks below pass." },
+    { target: "scan-share", title: "Share it", body: "Make a picture of your photo with the stamp and send it to Instagram, Facebook or any other app from your phone's share menu." },
     { target: "scan-evidence", title: "What Gemini saw", body: "The details it picked out of your photo to make the identification." },
     { target: "scan-checks", title: "Gemini recommends, rules decide", body: "These fixed checks must pass before a stamp is granted. Scan the same landmark twice and there is no second reward." },
   ],
   passport: [
     { target: "passport-cover", title: "Your passport", body: "Level, XP toward the next level, and your streak. One rest day never breaks a streak." },
+    { target: "my-day", title: "My day and your heat map", body: "Today's stations and landmarks, a map that glows where you go most, and a picture of your day to share." },
     { target: "stamp-tabs", title: "148 stamps to collect", body: "A stamp for every station, every landmark, and three collections. Tap any stamp to see how to earn it." },
     { target: "passport-settings", title: "Demo mode, intro and reset", body: "Turn demo mode off for live MBTA data and your real location, replay the opening, or reset to start clean." },
   ],

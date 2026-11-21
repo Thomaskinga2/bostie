@@ -1,12 +1,14 @@
 "use client";
-import { Camera, Check, ImageUp, RotateCcw, X } from "lucide-react";
+import { Camera, Check, ImageUp, RotateCcw, Share2, X } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ShareSheet } from "@/components/ShareSheet";
 import { GeminiChip } from "@/components/shell/Showcase";
-import { RARITY_INK, RarityPips, rarityLabel, StampArt } from "@/components/Stamp";
+import { StampArt } from "@/components/Stamp";
 import { Button, cx, SourceBadge } from "@/components/ui";
 import { ApiError, post, toJpegBase64 } from "@/lib/api";
+import { landmarkCard } from "@/lib/share";
 import type { ScanResponse } from "@/lib/contracts";
 import { derive, STAMP, XP } from "@/lib/gamification";
 import { BOSTON } from "@/lib/geo";
@@ -31,6 +33,8 @@ export default function ScanPage() {
   const requestLocation = useStore((s) => s.requestLocation);
 
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const name = useStore((s) => s.name);
+  const [sharing, setSharing] = useState(false);
   const [camera, setCamera] = useState<"off" | "starting" | "on" | "blocked" | "unsupported">("off");
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -123,10 +127,8 @@ export default function ScanPage() {
           <div data-tour="scan-stamp" className="mt-5 flex items-center gap-4 rounded-3xl border border-line bg-card p-4 shadow-card">
             <div className="w-[92px] shrink-0"><StampArt stamp={stamp} owned /></div>
             <div className="min-w-0">
-              <p className="flex items-center gap-2 text-[13.5px] font-bold" style={{ color: RARITY_INK[stamp.rarity] }}>
-                <RarityPips rarity={stamp.rarity} /> {rarityLabel(stamp.rarity)} stamp
-              </p>
-              <p className="mt-1 text-[14px] text-ink-soft">{stamp.rule}</p>
+              <p className="text-[15px] font-bold text-forest">{duplicate ? "Stamp already collected" : "New stamp for your passport"}</p>
+              <p className="mt-1 text-[14px] text-ink-soft">Landmark stamps are unlocked by a verified photo.</p>
               {!duplicate && (
                 <p className="mt-1.5 text-[15px] font-bold text-gold">
                   +{res.validation.verification === "photo-only" ? XP.landmarkPhotoOnly : XP.landmarkVerified} XP
@@ -180,10 +182,26 @@ export default function ScanPage() {
         </section>
 
         <div className="mt-6 flex flex-col gap-2.5">
+          {stamp && (
+            <Button variant="gold" onClick={() => setSharing(true)} data-tour="scan-share">
+              <Share2 size={18} aria-hidden /> Share this discovery
+            </Button>
+          )}
           {stamp && <Link href="/passport" className="inline-flex h-12 items-center justify-center rounded-full bg-forest text-[16px] font-semibold text-paper shadow-lift">View in passport</Link>}
           <Button variant="secondary" onClick={reset}><RotateCcw size={17} aria-hidden /> Scan another</Button>
           <GeminiChip className="self-center" />
         </div>
+        {stamp && id && (
+          <ShareSheet
+            open={sharing}
+            onClose={() => setSharing(false)}
+            title="Share this discovery"
+            filename={`bostie-${id}.png`}
+            caption={`I found ${PLACE[id].name} on the T with Bostie.`}
+            // Your photo is used once to draw this picture. It is not stored.
+            make={() => landmarkCard({ photo: phase.preview, place: PLACE[id], rider: name, at: timestamp() })}
+          />
+        )}
       </div>
     );
   }
@@ -297,7 +315,7 @@ export default function ScanPage() {
       </section>
 
       <p className="mt-5 text-[12.5px] leading-snug text-ink-faint">
-        Photos are sent to Google Gemini for recognition and are not stored by Bostie. Please avoid photographing people, and never scan from a platform edge or roadway.
+        Photos are sent to Google Gemini for recognition and are not stored by Bostie. If you share a discovery, your photo is used once to make that picture. Please avoid photographing people, and never scan from a platform edge or roadway.
       </p>
     </div>
   );

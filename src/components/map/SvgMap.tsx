@@ -114,7 +114,7 @@ function Glyph({ m, k, far }: { m: MapMarker; k: number; far: boolean }) {
   }
 }
 
-export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, center, zoom, fit, className }: CityMapProps) {
+export function SvgMap({ markers, lines = [], heat, selectedId, onSelect, onMapClick, center, zoom, fit, className }: CityMapProps) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
@@ -280,6 +280,27 @@ export function SvgMap({ markers, lines = [], selectedId, onSelect, onMapClick, 
         {!tilesOk && PARKS.map((pts, i) => (
           <path key={i} d={path(pts.map(pair)) + "Z"} fill="#d6e4c9" />
         ))}
+        {heat && heat.length > 0 && (
+          // Heat: soft blobs that add up where the rider goes most. Wide amber glow, hot red core.
+          <g style={{ mixBlendMode: "multiply" }} aria-hidden>
+            <defs>
+              <filter id="heat-blur" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation={Math.max(7, s * 0.09)} />
+              </filter>
+            </defs>
+            <g filter="url(#heat-blur)">
+              {heat.map((p, i) => {
+                const w = toWorld(p);
+                const heatK = Math.min(1, 0.35 + p.weight / 6);
+                return <circle key={`g${i}`} cx={sx(w.x)} cy={sy(w.y)} r={Math.max(15, s * 0.22) * (0.75 + heatK * 0.6)} fill="#f59e0b" opacity={0.3 + heatK * 0.35} />;
+              })}
+              {heat.filter((p) => p.weight >= 2).map((p, i) => {
+                const w = toWorld(p);
+                return <circle key={`c${i}`} cx={sx(w.x)} cy={sy(w.y)} r={Math.max(8, s * 0.1)} fill="#dc2626" opacity={Math.min(0.85, 0.3 + p.weight / 8)} />;
+              })}
+            </g>
+          </g>
+        )}
         {sorted.map((l) => (
           <g key={l.id} fill="none" strokeLinecap="round" strokeLinejoin="round">
             {/* a pale casing keeps every line legible over streets and water */}

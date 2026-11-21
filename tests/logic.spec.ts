@@ -2,7 +2,7 @@
 import { expect, test } from "@playwright/test";
 import { aliasMatch, candidatePool, findByAlias, scoreMap, scoreText, skillTier } from "../src/lib/game";
 import {
-  applyEvent, CHALLENGE, derive, emptyProgress, levelFor, settle, STAMP, streakFor, totalXp, XP, type GameEvent, type RoundEvent,
+  applyEvent, CHALLENGE, dayKey, derive, emptyProgress, levelFor, settle, STAMP, streakFor, totalXp, XP, type GameEvent, type RoundEvent,
 } from "../src/lib/gamification";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +13,9 @@ import { commuterRailFare, formatFare, journeyFare, quoteFare } from "../src/lib
 import { GUIDE_STEPS, TOUR } from "../src/lib/guide";
 import { bestStationFor, planRoute, routeOptions, STATION, STATIONS } from "../src/lib/network";
 import { PLACE } from "../src/lib/places";
+import { dayRecap, heatPoints, trailSegments } from "../src/lib/recap";
+import type { Journey } from "../src/lib/store";
+import { autoSteps } from "../src/lib/tracking";
 
 const DAY = 86_400_000;
 const T0 = new Date(2026, 10, 18, 12).getTime(); // a Wednesday, local noon
@@ -333,5 +336,78 @@ test.describe("routing to an address or place", () => {
     expect(nextDoor!.plan).toBeNull();
     expect(nextDoor!.station.id).toBe("place-pktrm");
     expect(bestStationFor("place-pktrm", { lat: 42.43, lng: -71.29 })).toBeNull(); // nowhere near a station
+  });
+});
+
+test.describe("automatic tracking", () => {
+  const plan = planRoute("place-harsq", "place-pktrm")!;
+  const at = (id: string) => ({ lat: STATION[id].lat, lng: STATION[id].lng });
+  const j = (over: Partial<Journey>): Journey => ({ id: "j", plan, demo: false, stage: "walking", leg: 0, stop: 1, startedAt: 0, tracking: "auto", ...over });
+  const far = { lat: 42.40, lng: -71.20 };
+
+  test("reaching the boarding station ends the walk; being elsewhere does not", () => {
+    expect(autoSteps(j({ stage: "walking" }), at("place-harsq"))).toBe(1);
+    expect(autoSteps(j({ stage: "walking" }), far)).toBe(0);
+  });
+  test("leaving the station means the rider is on the train", () => {
+    expect(autoSteps(j({ stage: "waiting" }), at("place-harsq"))).toBe(0);
+    expect(autoSteps(j({ stage: "waiting" }), at("place-cntsq"))).toBeGreaterThan(0);
+  });
+  test("a fix at a later stop catches up on stops missed underground", () => {
+    expect(autoSteps(j({ stage: "traveling", stop: 1 }), at("place-cntsq"))).toBe(1);
+    expect(autoSteps(j({ stage: "traveling", stop: 1 }), at("place-chmnl"))).toBe(3); // Central, Kendall, Charles
+    expect(autoSteps(j({ stage: "traveling", stop: 1 }), far)).toBe(0); // between stations: wait
+    expect(autoSteps(j({ stage: "traveling", stop: 3 }), at("place-cntsq"))).toBe(0); // never goes backwards
+  });
+  test("a journey to a place completes on reaching it, and plain journeys wait for the rider", () => {
+    const walkTo = { name: "X", address: "", lat: 42.3587, lng: -71.0638, minutes: 4, km: 0.3 };
+    expect(autoSteps(j({ stage: "exploring", walkTo }), walkTo)).toBe(1);
+    expect(autoSteps(j({ stage: "exploring", walkTo }), at("place-pktrm"))).toBe(0);
+    expect(autoSteps(j({ stage: "exploring" }), at("place-pktrm"))).toBe(0);
+    expect(autoSteps(j({ stage: "planning" }), at("place-harsq"))).toBe(0);
+    expect(autoSteps(j({ stage: "complete" }), at("place-pktrm"))).toBe(0);
+  });
+});
+
+test.describe("day recap and heat map", () => {
+  const day = dayKey(T0);
+  const events: GameEvent[] = [
+    station("place-harsq"),
+    station("place-pktrm", T0 + 60_000),
+    { t: "landmark", id: "state-house", at: T0 + 120_000, verification: "simulated" },
+    { t: "journey", id: "j1", from: "place-harsq", to: "place-pktrm", stops: 4, lines: ["Red"], minutes: 9, km: 4.2, demo: false, at: T0 + 180_000 },
+    { t: "journey", id: "j2", from: "place-harsq", to: "place-pktrm", stops: 4, lines: ["Red"], minutes: 9, km: 4.2, demo: false, at: T0 + 240_000 },
+    station("place-alfcl", T0 - DAY),
+  ];
+  const step = (i: number, at: number) => ({ lat: 42.36 + i * 0.0005, lng: -71.06, at });
+  // Two short walks, separated by a long silence underground and a jump across town.
+  const trail = [step(0, T0), step(1, T0 + 30_000), step(2, T0 + 60_000), { lat: 42.39, lng: -71.12, at: T0 + 30 * 60_000 }, { lat: 42.3905, lng: -71.12, at: T0 + 31 * 60_000 }];
+
+  test("a day counts only that day's places, distance and XP", () => {
+    const r = dayRecap(events, [{ key: "a", amount: 25, at: T0 }, { key: "b", amount: 10, at: T0 - DAY }] as never, trail, day);
+    expect(r.stations.map((s) => s.id)).toEqual(["place-harsq", "place-pktrm"]);
+    expect(r.landmarks.map((l) => l.id)).toEqual(["state-house"]);
+    expect(r.journeys).toHaveLength(2);
+    expect(r.rideKm).toBeCloseTo(8.4);
+    expect(r.xp).toBe(25);
+    expect(r.active).toBe(true);
+    expect(dayRecap(events, [], [], dayKey(T0 + 5 * DAY)).active).toBe(false);
+  });
+
+  test("places visited more often are hotter, and Today leaves out other days", () => {
+    const at = (id: string, pts = heatPoints(events, [], "all")) => pts.find((p) => p.lat === STATION[id].lat && p.lng === STATION[id].lng)?.weight ?? 0;
+    expect(at("place-harsq")).toBe(3); // collected once, ridden through twice
+    expect(at("place-cntsq")).toBe(2); // only passed through
+    expect(at("place-alfcl")).toBe(1);
+    expect(at("place-alfcl", heatPoints(events, [], day))).toBe(0);
+    expect(heatPoints(events, [], "all").some((p) => p.weight === 3 && p.lat === PLACE["state-house"].lat)).toBe(true);
+  });
+
+  test("the trail is broken where the signal was lost, never joined by a straight line", () => {
+    const segs = trailSegments(trail, "all");
+    expect(segs.map((s) => s.length)).toEqual([3, 2]);
+    expect(trailSegments([step(0, T0)], "all")).toEqual([]); // a single point is not a path
+    expect(dayRecap([], [], trail, day).trailKm).toBeGreaterThan(0.1);
+    expect(dayRecap([], [], trail, day).trailKm).toBeLessThan(0.3); // the cross-town jump is not counted
   });
 });

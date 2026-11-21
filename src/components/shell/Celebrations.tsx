@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { ACHIEVEMENTS, CHALLENGE, LEVELS, STAMP } from "@/lib/gamification";
 import { useStore } from "@/lib/store";
 import { Overlay } from "../Sheet";
-import { RARITY_INK, RarityPips, rarityLabel, StampArt } from "../Stamp";
+import { StampArt } from "../Stamp";
 import { Button, NamedIcon } from "../ui";
 
 /** The one orchestrated moment in the app: a stamp pressed onto the page. */
@@ -66,13 +66,8 @@ export function Celebrations() {
               <h2 className="mt-1 text-[30px] font-bold leading-tight">
                 {stamp?.name ?? achievement?.name ?? challenge?.title ?? LEVELS[level! - 1]?.title}
               </h2>
-              {stamp && (
-                <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-paper px-3 py-1.5 text-[13px] font-semibold" style={{ color: RARITY_INK[stamp.rarity] }}>
-                  <RarityPips rarity={stamp.rarity} /> {rarityLabel(stamp.rarity)}
-                </p>
-              )}
               <p className="mx-auto mt-3 max-w-[27ch] text-[15px] text-paper/80">
-                {stamp?.rule ?? achievement?.description ?? challenge?.description ?? `You are now level ${level}.`}
+                {(stamp ? (stamp.kind === "station" ? "Collected on your ride." : stamp.kind === "landmark" ? "Unlocked by your verified photo." : stamp.rule) : null) ?? achievement?.description ?? challenge?.description ?? `You are now level ${level}.`}
               </p>
               {(achievement || challenge) && <p className="mt-2 text-[15px] font-bold text-gold-soft">+{(achievement ?? challenge)!.xp} XP</p>}
             </motion.div>

@@ -20,6 +20,8 @@ export type CityMapProps = {
   center?: LatLng;
   /** Google-style zoom level (13 ≈ city, 15 ≈ neighbourhood). Both backends honour it. */
   zoom?: number;
+  /** Heat map: places the rider has been, brighter where the weight is higher. Built-in map only. */
+  heat?: { lat: number; lng: number; weight: number }[];
   /** Frame these points instead of using center/zoom. */
   fit?: LatLng[];
   className?: string;

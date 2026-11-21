@@ -37,6 +37,8 @@ Saved places, service alerts, journey and discovery history, achievement badges,
 | Bostie mascot on the opening, name step, tips, empty states and icon | Done | Screenshots |
 | Address and place search on Ride, routed to the best station plus a walk | Done on OpenStreetMap; Google Places path untested (no key) | Flow test with a mocked search; real searches checked by hand; logic tests for best-station choice |
 | MBTA fare information: fare engine, route comparison cards, fare summary, payment guidance | Done | 11 logic tests against published prices; fare checks in two flow tests |
+| Automatic (live location) or Manual journey tracking; per-part times on route cards; navigation map during a journey | Done | Tracking logic tests; demo and real-location flow tests |
+| Share a discovery, My day recap, heat map, GPS trail (device only) | Done. Not checked on a real phone: the native share menu, and an outdoor GPS trail. No heat layer on the Google Maps backend | Recap logic tests; share, My day and tracking flow tests; generated pictures reviewed |
 
 ## P2 and not built
 

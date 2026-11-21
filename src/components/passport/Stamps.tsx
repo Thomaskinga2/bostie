@@ -4,9 +4,9 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Sheet } from "@/components/Sheet";
-import { RARITY_INK, rarityLabel, RarityPips, StampArt } from "@/components/Stamp";
+import { StampArt } from "@/components/Stamp";
 import { Button, cx, Empty, LineDots, Meter, Photo, shortDate } from "@/components/ui";
-import { RARITIES, STAMP, STAMPS, type Derived, type Rarity, type Stamp } from "@/lib/gamification";
+import { STAMP, STAMPS, type Derived, type Stamp } from "@/lib/gamification";
 import { LINES, MAIN_LINES, STATION, type LineId } from "@/lib/network";
 import { PLACE } from "@/lib/places";
 import { useStore } from "@/lib/store";
@@ -51,10 +51,7 @@ function StampDetail({ stamp, d, onClose }: { stamp: Stamp; d: Derived; onClose:
         {station && <LineDots lines={station.lines} />}
         {stamp.subtitle}
       </p>
-      <p className="mt-2 flex items-center justify-center gap-2 text-[14px] font-semibold" style={{ color: RARITY_INK[stamp.rarity] }}>
-        <RarityPips rarity={stamp.rarity} /> {rarityLabel(stamp.rarity)}
-      </p>
-      <p className="mx-auto mt-1 max-w-[30ch] text-center text-[14px] text-ink-soft">{stamp.rule}</p>
+      {stamp.kind === "set" && <p className="mx-auto mt-2 max-w-[30ch] text-center text-[14px] text-ink-soft">{stamp.rule}</p>}
 
       {owned ? (
         <dl className="mt-5 divide-y divide-line border-y border-line text-[14.5px]">
@@ -111,14 +108,12 @@ export function Stamps({ d }: { d: Derived }) {
   const [kind, setKind] = useState<Kind>("station");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Status>("all");
-  const [rarity, setRarity] = useState<Rarity | null>(null);
   const [line, setLine] = useState<LineId | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
   const ofKind = useMemo(() => STAMPS.filter((s) => s.kind === kind), [kind]);
   const have = ofKind.filter((s) => s.id in d.stamps).length;
-  const rarities = RARITIES.filter((r) => ofKind.some((s) => s.rarity === r));
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -128,19 +123,17 @@ export function Stamps({ d }: { d: Derived }) {
         return (
           (!q || s.name.toLowerCase().includes(q) || s.subtitle.toLowerCase().includes(q)) &&
           (status === "all" || (status === "owned") === owned) &&
-          (!rarity || s.rarity === rarity) &&
           (!line || s.kind !== "station" || STATION[s.refId].lines.includes(line))
         );
       })
       // collected first, most recent first; locked keep catalogue order (sort is stable)
       .sort((a, b) => (d.stamps[b.id] ?? 0) - (d.stamps[a.id] ?? 0));
-  }, [ofKind, d.stamps, query, status, rarity, line]);
+  }, [ofKind, d.stamps, query, status, line]);
 
   const visible = showAll ? shown : shown.slice(0, PAGE);
   const stamp = selected ? STAMP[selected] : null;
   const switchKind = (k: Kind) => {
     setKind(k);
-    setRarity(null);
     setLine(null);
     setShowAll(false);
   };
@@ -196,12 +189,6 @@ export function Stamps({ d }: { d: Derived }) {
             {s === "all" ? "All" : s === "owned" ? "Collected" : "Locked"}
           </Chip>
         ))}
-        {rarities.length > 1 &&
-          rarities.map((r) => (
-            <Chip key={r} active={rarity === r} onClick={() => setRarity(rarity === r ? null : r)} color={RARITY_INK[r]}>
-              {rarityLabel(r)}
-            </Chip>
-          ))}
         {kind === "station" &&
           MAIN_LINES.map((l) => (
             <Chip key={l} active={line === l} onClick={() => setLine(line === l ? null : l)} color={LINES[l].color}>
@@ -222,7 +209,6 @@ export function Stamps({ d }: { d: Derived }) {
                 onClick={() => {
                   setQuery("");
                   setStatus("all");
-                  setRarity(null);
                   setLine(null);
                 }}
               >
@@ -237,7 +223,7 @@ export function Stamps({ d }: { d: Derived }) {
             <li key={s.id}>
               <button
                 onClick={() => setSelected(s.id)}
-                aria-label={`${s.name}, ${rarityLabel(s.rarity)}, ${s.id in d.stamps ? "collected" : "locked"}`}
+                aria-label={`${s.name}, ${s.id in d.stamps ? "collected" : "locked"}`}
                 className="block w-full rounded-2xl transition active:scale-95"
               >
                 <StampArt stamp={s} owned={s.id in d.stamps} />

@@ -2,12 +2,12 @@
 // Deterministic stamp templates. Every stamp's look is a pure function of its id:
 // stations are transit roundels in their line colours, landmarks are perforated
 // postage stamps printed from the landmark's photo, collections are gold seals.
-import { Lock } from "lucide-react";
 import { PLACE, photoOf } from "@/lib/places";
-import { RARITIES, type Rarity, type Stamp } from "@/lib/gamification";
+import type { Rarity, Stamp } from "@/lib/gamification";
 import { LINES, STATION } from "@/lib/network";
 import { cx } from "./ui";
 
+// Ink colours for stamp artwork. The tiers behind them are internal: no rarity label is shown anywhere.
 export const RARITY_INK: Record<Rarity, string> = {
   common: "var(--color-r-common)",
   uncommon: "var(--color-r-uncommon)",
@@ -15,22 +15,10 @@ export const RARITY_INK: Record<Rarity, string> = {
   epic: "var(--color-r-epic)",
   legendary: "var(--color-r-legendary)",
 };
-export const rarityLabel = (r: Rarity) => r[0].toUpperCase() + r.slice(1);
 
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7);
 /** A hand-stamped tilt between -5° and 5°, fixed per stamp. */
 export const tiltOf = (id: string) => (Math.abs(hash(id)) % 11) - 5;
-
-export function RarityPips({ rarity, className }: { rarity: Rarity; className?: string }) {
-  const n = RARITIES.indexOf(rarity) + 1;
-  return (
-    <span className={cx("inline-flex items-center gap-[3px]", className)} aria-label={`${rarityLabel(rarity)} rarity`}>
-      {RARITIES.map((_, i) => (
-        <span key={i} className="size-[5px] rounded-full" style={{ background: i < n ? RARITY_INK[rarity] : "var(--color-line)" }} />
-      ))}
-    </span>
-  );
-}
 
 function Roundel({ stamp, owned }: { stamp: Stamp; owned: boolean }) {
   const s = STATION[stamp.refId];
@@ -128,13 +116,6 @@ export function StampArt({ stamp, owned, tilt = true, className }: { stamp: Stam
       {legendary && (
         <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-full">
           <div className="absolute inset-y-0 left-0 w-1/3 animate-sheen bg-gradient-to-r from-transparent via-white/45 to-transparent" />
-        </div>
-      )}
-      {!owned && (
-        <div className="absolute inset-0 grid place-items-center">
-          <span className="grid size-7 place-items-center rounded-full bg-ink/55 text-white">
-            <Lock size={13} aria-hidden />
-          </span>
         </div>
       )}
     </div>

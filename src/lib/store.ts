@@ -27,7 +27,13 @@ export type Journey = {
   startedAt: number;
   /** Set when the trip is to an address or place: the walk from the last station. */
   walkTo?: WalkTo;
+  /** "auto" follows the rider's live location; "manual" waits for a tap at each step. */
+  tracking?: "auto" | "manual";
 };
+
+export type TrailPoint = { lat: number; lng: number; at: number };
+/** Oldest points are dropped beyond this, to stay well inside browser storage limits. */
+export const TRAIL_CAP = 4000;
 
 export type Celebration = { id: string; kind: "stamp" | "achievement" | "challenge" | "level"; ref: string };
 
@@ -53,6 +59,8 @@ type State = Progress & {
   home: string | null;
   work: string | null;
   recents: string[];
+  /** Where the phone has been, recorded in Automatic mode. Stays on this device: never synced. */
+  trail: TrailPoint[];
   journey: Journey | null;
   geo: LatLng | null;
   geoStatus: "idle" | "asking" | "granted" | "denied" | "unavailable";
@@ -69,6 +77,8 @@ type State = Progress & {
   toggleSaved: (id: string) => void;
   setShortcut: (kind: "home" | "work", stationId: string | null) => void;
   removeRecent: (stationId: string) => void;
+  addTrailPoint: (p: TrailPoint) => void;
+  clearTrail: () => void;
   dismissCelebration: () => void;
   logAi: (meta: AiMeta | null | undefined, output: unknown, action: string) => void;
   setShowcase: (open: boolean) => void;
@@ -87,6 +97,7 @@ type State = Progress & {
   startJourney: (from: string, to: string, walkTo?: WalkTo) => boolean;
   /** Swap in another route option. Only while the journey is still being planned. */
   choosePlan: (plan: Plan) => void;
+  setTracking: (mode: "auto" | "manual") => void;
   advanceJourney: () => void;
   endJourney: () => void;
 };
@@ -109,6 +120,7 @@ export const useStore = create<State>()(
       home: null,
       work: null,
       recents: [],
+      trail: [],
       journey: null,
       geo: null,
       geoStatus: "idle",
@@ -144,6 +156,8 @@ export const useStore = create<State>()(
         set((s) => ({ saved: s.saved.includes(id) ? s.saved.filter((x) => x !== id) : [...s.saved, id] })),
       setShortcut: (kind, stationId) => set(kind === "home" ? { home: stationId } : { work: stationId }),
       removeRecent: (stationId) => set((s) => ({ recents: s.recents.filter((id) => id !== stationId) })),
+      addTrailPoint: (p) => set((s) => ({ trail: [...s.trail, p].slice(-TRAIL_CAP) })),
+      clearTrail: () => set({ trail: [] }),
       dismissCelebration: () => set((s) => ({ celebrations: s.celebrations.slice(1) })),
       logAi: (meta, output, action) => {
         if (!meta) return; // only real model calls are ever shown
@@ -160,7 +174,7 @@ export const useStore = create<State>()(
       setDemo: (demo) => set({ demo }),
       resetAll: () =>
         // Tips come back too, so the next judge gets the full guided first run.
-        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo, tipsSeen: {}, tipsOff: false, home: null, work: null, recents: [] })),
+        set((s) => ({ ...emptyProgress(), saved: [], journey: null, celebrations: [], ai: [], onboarded: true, demo: s.demo, tipsSeen: {}, tipsOff: false, home: null, work: null, recents: [], trail: [] })),
 
       requestLocation: () => {
         if (typeof navigator === "undefined" || !navigator.geolocation) return set({ geoStatus: "unavailable" });
@@ -185,6 +199,11 @@ export const useStore = create<State>()(
       choosePlan: (plan) => {
         const j = get().journey;
         if (j?.stage === "planning" && plan.from === j.plan.from && plan.to === j.plan.to) set({ journey: { ...j, plan } });
+      },
+
+      setTracking: (mode) => {
+        const j = get().journey;
+        if (j && j.stage !== "complete") set({ journey: { ...j, tracking: mode } });
       },
 
       advanceJourney: () => {
@@ -225,7 +244,7 @@ export const useStore = create<State>()(
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({
         events: s.events, xp: s.xp, achievements: s.achievements, challenges: s.challenges, name: s.name,
-        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents,
+        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents, trail: s.trail,
       }),
     },
   ),

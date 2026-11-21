@@ -7,7 +7,7 @@ import { CityMap, TRANSIT_LINES, type MapLine, type MapMarker } from "@/componen
 import { Sheet } from "@/components/Sheet";
 import { GuideButton } from "@/components/shell/Tour";
 import { Logo } from "@/components/shell/Welcome";
-import { RarityPips, rarityLabel, StampArt } from "@/components/Stamp";
+import { StampArt } from "@/components/Stamp";
 import { Button, cx, Photo, shortDate, StationSign } from "@/components/ui";
 import { derive, levelFor, STAMP, totalXp } from "@/lib/gamification";
 import { distanceKm, formatDistance, walkMinutes, type LatLng } from "@/lib/geo";
@@ -55,11 +55,8 @@ function Collectible({ stampId, owned }: { stampId: string; owned: boolean }) {
     <div className="mt-3 flex items-center gap-4 rounded-2xl bg-paper p-3.5">
       <StampArt stamp={stamp} owned={owned} className="w-[76px] shrink-0" />
       <div className="min-w-0">
-        <p className="text-[13px] text-ink-soft">{owned ? "In your passport" : "Stamp on offer"}</p>
-        <p className="flex items-center gap-2 text-[15px] font-bold">
-          {rarityLabel(stamp.rarity)} <RarityPips rarity={stamp.rarity} />
-        </p>
-        <p className="mt-0.5 text-[13px] leading-snug text-ink-soft">{stamp.rule}</p>
+        <p className="text-[15px] font-bold">{owned ? "In your passport" : "Stamp on offer"}</p>
+        <p className="mt-0.5 text-[13px] leading-snug text-ink-soft">{stamp.kind === "station" ? "Collected when you ride through or to this station." : "Unlocked by scanning this landmark."}</p>
       </div>
     </div>
   );
