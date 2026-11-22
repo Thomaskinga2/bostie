@@ -94,7 +94,9 @@ export default function RidePage() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const alerts = useAlerts();
 
-  const searching = mode !== "to" || text.trim() !== "";
+  /** The destination picked from the list. It stays in the To box until the rider taps Start. */
+  const [dest, setDest] = useState<{ name: string; stationId?: string; hit?: PlaceHit } | null>(null);
+  const searching = mode !== "to" || (text.trim() !== "" && !dest);
   const stations = searching ? suggestStations(text) : [];
   /** Home and work are stations; the start and the destination can be anywhere. */
   const anywhere = mode === "to" || mode === "from";
@@ -107,21 +109,38 @@ export default function RidePage() {
   const inProgress = journey && journey.stage !== "complete";
   /** The trip starts from wherever the rider is (their nearest station) rather than a station they chose. */
   const usingLocation = !pickedFrom && !fromPlace && !!near;
+  /** Back to the destination field, keeping whatever destination was already chosen. */
+  const backToDest = () => {
+    setText(dest?.name ?? "");
+    setMode("to");
+  };
   const startAt = (hit: PlaceHit) => {
     setFromPlace(hit);
     setPickedFrom(null);
-    reset();
+    backToDest();
   };
   const useCurrentLocation = () => {
     setPickedFrom(null);
     setFromPlace(null);
     if (!where.at) requestLocation();
-    reset();
+    backToDest();
   };
 
   const reset = () => {
     setText("");
+    setDest(null);
     setMode("to");
+  };
+  /** Picking a destination fills the box and closes the list; nothing starts yet. */
+  const choose = (d: NonNullable<typeof dest>) => {
+    setDest(d);
+    setText(d.name);
+    setMode("to");
+    setNote("");
+  };
+  const startTrip = () => {
+    if (dest?.hit) goPlace(dest.hit);
+    else if (dest?.stationId) go(dest.stationId);
   };
 
   const go = (toId: string) => {
@@ -144,12 +163,14 @@ export default function RidePage() {
   };
 
   /** A station was picked from the results: what that means depends on what the field is choosing. */
-  const pick = (id: string) => {
-    if (mode === "to") return go(id);
+  const pick = (id: string, name = STATION[id].name) => {
+    if (mode === "to") return choose({ name, stationId: id });
     if (mode === "from") {
       setPickedFrom(id);
       setFromPlace(null);
-    } else setShortcut(mode, id);
+      return backToDest();
+    }
+    setShortcut(mode, id);
     reset();
   };
 
@@ -177,7 +198,7 @@ export default function RidePage() {
                   <button
                     key={row}
                     onClick={() => {
-                      setText("");
+                      setText(row === "to" ? (dest?.name ?? "") : "");
                       setMode(row);
                     }}
                     aria-label={row === "from" ? "Change starting point" : "Choose destination"}
@@ -185,7 +206,7 @@ export default function RidePage() {
                   >
                     <span className="w-10 shrink-0 text-[13px] font-semibold text-paper/70">{row === "from" ? "From" : "To"}</span>
                     {row === "to" ? (
-                      <span className="truncate text-[16.5px] text-paper/70">Where to?</span>
+                      <span className={cx("truncate text-[16.5px]", dest ? "font-bold" : "text-paper/70")}>{dest?.name ?? "Where to?"}</span>
                     ) : usingLocation ? (
                       <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-t-green/90 px-2 py-1 text-[15px] font-bold">
                         <span className="truncate">Current location</span>
@@ -207,15 +228,17 @@ export default function RidePage() {
                     value={text}
                     onChange={(e) => {
                       setText(e.target.value);
+                      setDest(null); // typing again reopens the list
                       setNote("");
                     }}
                     onKeyDown={(e) => {
+                      if (e.key === "Enter" && dest && mode === "to") return startTrip();
                       if (e.key === "Enter" && searching) {
                         if (!text.trim()) return; // nothing typed: wait for a choice instead of guessing one
-                        const first = stations[0]?.id ?? (places[0] && mode !== "from" ? stationFor(places[0]).id : null);
-                        if (first) pick(first);
+                        if (stations[0]) pick(stations[0].id);
+                        else if (places[0] && mode !== "from") pick(stationFor(places[0]).id, places[0].name);
                         else if (mode === "from" && places[0]) startAt(asHit(places[0]));
-                        else if (routed[0]) goPlace(routed[0].hit);
+                        else if (routed[0]) choose({ name: routed[0].hit.name, hit: routed[0].hit });
                         else if (starts[0]) startAt(starts[0].hit);
                         else setNote("Pick a station or place from the list. Bostie only plans trips to places it can find.");
                       } else if (e.key === "Escape") reset();
@@ -228,7 +251,7 @@ export default function RidePage() {
                     style={{ outline: "none" }}
                     className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold placeholder:font-normal placeholder:text-ink-faint"
                   />
-                  {searching && (
+                  {(searching || dest) && (
                     <button onClick={reset} aria-label="Clear search" className="grid size-8 shrink-0 place-items-center rounded-full text-ink-soft">
                       <X size={18} />
                     </button>
@@ -260,6 +283,11 @@ export default function RidePage() {
             "Tap From to start somewhere else or use your current location."
           )}
         </p>
+        {dest && mode === "to" && (
+          <button onClick={startTrip} className="mt-3 flex h-[52px] w-full items-center justify-center gap-2 rounded-full bg-gold text-[17px] font-bold text-forest-deep" data-testid="ride-start">
+            <Navigation size={18} fill="currentColor" aria-hidden /> Start
+          </button>
+        )}
       </header>
 
       {note && <p role="alert" className="mx-4 mt-3 rounded-2xl bg-gold-soft px-4 py-3 text-[14.5px] font-semibold text-[#5b410b]">{note}</p>}
@@ -296,7 +324,7 @@ export default function RidePage() {
               const s = stationFor(p);
               return (
                 <li key={p.id} role="option" aria-selected={false}>
-                  <button onClick={() => (mode === "from" ? startAt(asHit(p)) : pick(s.id))} aria-label={`${mode === "from" ? "Start at" : "Go to"} ${p.name}, by ${s.name} station`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                  <button onClick={() => (mode === "from" ? startAt(asHit(p)) : pick(s.id, p.name))} aria-label={`${mode === "from" ? "Start at" : "Go to"} ${p.name}, by ${s.name} station`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
                     <MapPin size={22} className="shrink-0 text-gold" aria-hidden />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[16.5px] font-bold">{p.name}</span>
@@ -308,7 +336,7 @@ export default function RidePage() {
             })}
             {routed.map(({ hit, best }) => (
               <li key={hit.id} role="option" aria-selected={false}>
-                <button onClick={() => goPlace(hit)} aria-label={`Go to ${hit.name}${hit.address ? `, ${hit.address}` : ""}`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
+                <button onClick={() => choose({ name: hit.name, hit })} aria-label={`Go to ${hit.name}${hit.address ? `, ${hit.address}` : ""}`} className="flex min-h-[60px] w-full items-center gap-3.5 px-4 py-2 text-left">
                   <MapPin size={22} className="shrink-0 text-ink-soft" aria-hidden />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[16.5px] font-bold">{hit.name}</span>

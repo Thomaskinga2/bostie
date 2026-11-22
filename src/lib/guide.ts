@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 19;
+export const GUIDE_VERSION = 20;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -41,7 +41,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "tabs", title: "Four places to go", body: "The map, ride planning, things to discover, and your passport of stamps." },
   ],
   ride: [
-    { target: "ride-search", title: "From and to", body: "Type a station, an address or any place in To. Tap From to start at a station, any address or place, or choose Current location to start from where you are." },
+    { target: "ride-search", title: "From and to", body: "Type a station, address or place in To, pick it from the list, then tap Start. Tap From to begin somewhere else, or choose Current location." },
     { target: "ride-shortcuts", title: "Shortcuts", body: "Pick a station on the map, or set home and work once for one-tap trips. Live service alerts are here too." },
     { target: "ride-recents", title: "Recent and popular", body: "Tap a station to plan a ride there. The dots menu sets it as home or work, or saves it." },
   ],

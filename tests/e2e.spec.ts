@@ -548,6 +548,7 @@ test("live transit: real predictions are labelled live, failures degrade honestl
 
   await page.getByRole("combobox", { name: "Where to?" }).fill("aqua");
   await page.getByRole("button", { name: "Go to Aquarium" }).click(); // picking a result plans the trip
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByText(/Change at/).first()).toBeVisible();
   await expect(page.getByText("Estimated", { exact: true }).first()).toBeVisible();
   await expect(page.getByTestId("departures").getByText("Live MBTA")).toBeVisible();
@@ -784,9 +785,11 @@ test("Ride search: type, get suggestions inside the phone, and go", async ({ pag
   await page.getByRole("button", { name: "Choose South Station" }).click();
   await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("South Station");
 
-  // Enter takes the first result and plans the trip.
+  // Enter picks the first result; a second Enter starts the trip.
   await search.fill("kenm");
-  await search.press("Enter");
+  await search.press("Enter"); // Enter picks the first result…
+  await expect(search).toHaveValue("Kenmore");
+  await search.press("Enter"); // …and Enter again starts
   await expect(page).toHaveURL(/\/journey$/);
   await expect(page.getByRole("heading", { name: "South Station to Kenmore" })).toBeVisible();
 });
@@ -864,6 +867,12 @@ test("Ride search finds any address or place and plans the best MBTA trip there"
   await expect(page.getByText("Places from OpenStreetMap.")).toBeVisible();
   await shot(page, "22-ride-places");
   await mfa.click();
+  // The place stays in the box, the list closes, and nothing starts until Start is tapped.
+  await expect(search).toHaveValue("Museum of Fine Arts");
+  await expect(results).toHaveCount(0);
+  await expect(page).toHaveURL(/\/ride$/);
+  await shot(page, "22c-ride-start");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
 
   // The journey is to the place: train to the best station, then the walk.
   await expect(page).toHaveURL(/\/journey$/);
@@ -883,6 +892,7 @@ test("Ride search finds any address or place and plans the best MBTA trip there"
   // An address works the same way.
   await search.fill("1217 beacon");
   await results.getByRole("button", { name: /Go to 1217 Beacon Street/ }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Harvard to 1217 Beacon Street" })).toBeVisible();
   await page.getByRole("button", { name: "End journey" }).click();
 
@@ -1078,6 +1088,7 @@ test("directions and departures: official destinations, only trains that reach t
   await page.getByRole("button", { name: "Choose Park Street", exact: true }).click();
   await page.getByRole("combobox", { name: "Where to?" }).fill("shawmut"); // on the Ashmont branch only
   await page.getByRole("button", { name: "Go to Shawmut" }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
 
   const steps = page.getByRole("list", { name: "Step by step" });
   await expect(steps.getByText("Board the Red Line")).toBeVisible();
@@ -1118,6 +1129,7 @@ test("Green Line trunk trips accept every branch that goes there", async ({ page
   await page.getByRole("button", { name: "Choose Park Street", exact: true }).click();
   await page.getByRole("combobox", { name: "Where to?" }).fill("kenmore");
   await page.getByRole("button", { name: "Go to Kenmore" }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByRole("list", { name: "Step by step" }).getByText("Board the Green Line B, C or D")).toBeVisible();
   await expect(page.getByText("Westbound platform, toward Boston College, Cleveland Circle or Riverside.")).toBeVisible();
 });
@@ -1187,6 +1199,7 @@ test("Ride: From and To fields, and starting from your current location", async 
 
   await page.getByRole("combobox", { name: "Where to?" }).fill("park");
   await page.getByRole("button", { name: "Go to Park Street", exact: true }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Central to Park Street" })).toBeVisible();
 });
 
@@ -1206,6 +1219,7 @@ test("Ride: a trip can start from any address or place, not only a station", asy
 
   await page.getByRole("combobox", { name: "Where to?" }).fill("park");
   await page.getByRole("button", { name: "Go to Park Street", exact: true }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByRole("heading", { name: "1217 Beacon Street to Park Street" })).toBeVisible();
   const steps = page.getByRole("list", { name: "Step by step" });
   await expect(steps.getByRole("listitem").first()).toContainText(/Walk to .+From 1217 Beacon Street\./);
@@ -1244,6 +1258,7 @@ test("get-off alerts in Manual mode: games on the train, a warning when the stop
   await page.goto("/ride");
   await page.getByRole("combobox", { name: "Where to?" }).fill("central");
   await page.getByRole("button", { name: "Go to Central", exact: true }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
   const alerts = page.getByRole("switch", { name: /get-off alerts/i });
   await expect(alerts).toHaveAttribute("aria-checked", "false");
   await alerts.click();
