@@ -605,7 +605,7 @@ export default function JourneyPage() {
         )}
       </div>
 
-      <div className="sticky bottom-0 mt-4 space-y-1 bg-gradient-to-t from-paper from-70% to-paper/0 px-5 pb-4 pt-6">
+      <div className="sticky bottom-0 z-10 mt-4 space-y-1 border-t border-line bg-paper px-5 pb-4 pt-3">
         {stage === "complete" ? (
           <>
             <Button size="lg" className="w-full" onClick={() => router.push("/passport")}>{v.action}</Button>

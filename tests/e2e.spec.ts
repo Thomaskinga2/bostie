@@ -196,7 +196,7 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await shot(page, "05b-tip-round");
   tips.push(TOUR["play-round"][0].title);
   await readTips();
-  await expect(page.getByRole("heading", { name: "Where is this?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(What|Where) is this\?$/ })).toBeVisible();
   await shot(page, "05-round");
   await page.getByLabel("Your guess").fill("that gold dome building by the common");
   await page.getByRole("button", { name: "Submit guess" }).click();
@@ -235,7 +235,8 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   expect(await dismissRewards(page)).toContain("Massachusetts State House");
   await readTips();
   await expect(page.getByText("Landmark verified")).toBeVisible();
-  await expect(page.getByText("large gilded gold dome")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Information" })).toBeVisible();
+  await expect(page.getByText("What Gemini saw")).toHaveCount(0);
   await shot(page, "11-scan-result");
 
   // Complete the journey
@@ -347,7 +348,7 @@ test("Guess Boston: hints, wrong guesses, reveal, and Gemini being down", async 
   expect(round).toMatchObject({ t: "round", correct: false, score: 0, hints: 1 });
   expect(await xpTotal(page)).toBe(5); // participation XP only
   await page.getByRole("button", { name: "Next round" }).click(); // falls back to a random pick
-  await expect(page.getByRole("heading", { name: "Where is this?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(What|Where) is this\?$/ })).toBeVisible();
 });
 
 test("pin drop mode scores by distance on the map", async ({ page }) => {

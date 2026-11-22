@@ -144,22 +144,9 @@ export default function ScanPage() {
 
         {res.result.historicalSummary && stamp && (
           <section className="mt-6">
-            <h2 className="text-[21px] font-bold">Why it matters</h2>
+            <h2 className="text-[21px] font-bold">Information</h2>
             <p className="mt-1.5 text-[16px] leading-relaxed">{res.result.historicalSummary}</p>
             <p className="mt-1.5 text-[12.5px] text-ink-faint">Written by Gemini from Bostie&apos;s reference notes.</p>
-          </section>
-        )}
-
-        {res.result.visualEvidence.length > 0 && (
-          <section data-tour="scan-evidence" className="mt-6">
-            <h2 className="text-[21px] font-bold">What Gemini saw</h2>
-            <ul className="mt-2 space-y-1.5">
-              {res.result.visualEvidence.map((e) => (
-                <li key={e} className="flex gap-2.5 text-[15px] leading-snug">
-                  <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-forest" /> {e}
-                </li>
-              ))}
-            </ul>
           </section>
         )}
 

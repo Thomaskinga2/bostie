@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 16;
+export const GUIDE_VERSION = 17;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -77,7 +77,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "start-round", title: "Start a round", body: "Difficulty follows your last four rounds: play well and the photos get harder." },
   ],
   "play-round": [
-    { target: "round-photo", title: "Where is this?", body: "One photo of a real place in Boston. Up to three guesses." },
+    { target: "round-photo", title: "What is this?", body: "One photo of a real place in Boston. Up to three guesses." },
     { target: "guess-input", title: "Say it your way", body: "A name, a nickname or a description all work, like “the gold dome building”. Gemini works out which place you mean; code checks the answer." },
     { target: "round-tools", title: "Stuck?", body: "“Hint” asks Gemini for a clue shaped by your guesses, at a cost of 150 points. “Pin it instead” lets you answer on the map." },
   ],
@@ -94,7 +94,6 @@ export const TOUR: Record<Scene, Spot[]> = {
   "scan-result": [
     { target: "scan-stamp", title: "Your new stamp", body: "A landmark stamp for your passport. It is only granted when the checks below pass." },
     { target: "scan-share", title: "Share it", body: "Make a picture of your photo with the stamp and send it to Instagram, Facebook or any other app from your phone's share menu." },
-    { target: "scan-evidence", title: "What Gemini saw", body: "The details it picked out of your photo to make the identification." },
     { target: "scan-checks", title: "Gemini recommends, rules decide", body: "These fixed checks must pass before a stamp is granted. Scan the same landmark twice and there is no second reward." },
   ],
   passport: [

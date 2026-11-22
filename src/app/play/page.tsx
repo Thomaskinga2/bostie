@@ -153,7 +153,7 @@ export default function PlayPage() {
   if (!round) {
     return (
       <div ref={scroller} data-scene="play-lobby" className="scroll-area h-full pb-8">
-        <PageHeader title="Guess Boston" sub="One photo. Where in the city is it?" />
+        <PageHeader title="Guess Boston" sub="One photo. What is it, and where?" />
         <div className="px-5">
           <div className="relative overflow-hidden rounded-3xl bg-ink text-paper">
             <Photo id="old-state-house" credit={false} className="h-[170px] opacity-70" />
@@ -239,7 +239,7 @@ export default function PlayPage() {
               </div>
             ) : db?.debrief ? (
               <div className="space-y-4">
-                {([["The tells", db.debrief.tells], ["Why it matters", db.debrief.history], ["Getting there", db.debrief.transit]] as const).map(([h, body]) => (
+                {([["The tells", db.debrief.tells], ["Information", db.debrief.history], ["Getting there", db.debrief.transit]] as const).map(([h, body]) => (
                   <div key={h}>
                     <h2 className="text-[19px] font-bold">{h}</h2>
                     <p className="mt-0.5 text-[15.5px] leading-relaxed">{body}</p>
@@ -250,7 +250,7 @@ export default function PlayPage() {
               </div>
             ) : (
               <div>
-                <h2 className="text-[19px] font-bold">Why it matters</h2>
+                <h2 className="text-[19px] font-bold">Information</h2>
                 <p className="mt-0.5 text-[15.5px] leading-relaxed">{place.summary}</p>
                 <p className="mt-1.5 text-[12.5px] text-ink-faint">Gemini is unreachable, so this is Bostie&apos;s reference note.</p>
               </div>
@@ -295,7 +295,7 @@ export default function PlayPage() {
 
         <div className="px-5 pb-4 pt-4">
           <div className="flex items-baseline justify-between">
-            <h1 className="text-[25px] font-bold">Where is this?</h1>
+            <h1 className="text-[25px] font-bold">{input === "pin" ? "Where is this?" : "What is this?"}</h1>
             {input === "text" && (
               <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-ink-soft" aria-label={`${MAX_ATTEMPTS - wrong} attempts left`}>
                 {Array.from({ length: MAX_ATTEMPTS }, (_, i) => <span key={i} className={cx("size-2.5 rounded-full", i < MAX_ATTEMPTS - wrong ? "bg-forest" : "bg-line")} />)}
