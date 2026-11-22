@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 15;
+export const GUIDE_VERSION = 16;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -75,7 +75,6 @@ export const TOUR: Record<Scene, Spot[]> = {
   "play-lobby": [
     { target: "game-modes", title: "Five ways to play", body: "Name landmarks, stations or neighbourhoods from a photo, or drop a pin on the map instead of typing." },
     { target: "start-round", title: "Start a round", body: "Difficulty follows your last four rounds: play well and the photos get harder." },
-    { target: "challenges", title: "Challenges", body: "Accept one for bonus XP. Progress counts from the moment you accept." },
   ],
   "play-round": [
     { target: "round-photo", title: "Where is this?", body: "One photo of a real place in Boston. Up to three guesses." },

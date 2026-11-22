@@ -3,13 +3,13 @@ import { Check, ChevronLeft, Lightbulb, MapPin, Send, Sparkles, Type } from "luc
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeminiChip } from "@/components/shell/Showcase";
-import { Button, cx, Meter, NamedIcon, PageHeader, Photo } from "@/components/ui";
+import { Button, cx, PageHeader, Photo } from "@/components/ui";
 import { post } from "@/lib/api";
 import type { DebriefResponse, GuessResponse, HintResponse } from "@/lib/contracts";
 import {
   candidatePool, HINT_PENALTY, MAX_ATTEMPTS, MAX_HINTS, MODES, pickRandom, scoreMap, scoreText, skillTier, WRONG_PENALTY, type GameMode,
 } from "@/lib/game";
-import { CHALLENGES, challengeProgress, derive, XP } from "@/lib/gamification";
+import { derive, XP } from "@/lib/gamification";
 import { BOSTON, distanceKm, formatDistance, type LatLng } from "@/lib/geo";
 import { PLACE } from "@/lib/places";
 import { useStore } from "@/lib/store";
@@ -39,8 +39,6 @@ const xpFor = (score: number) => Math.max(XP.roundMin, Math.round(score / 20));
 
 export default function PlayPage() {
   const events = useStore((s) => s.events);
-  const challenges = useStore((s) => s.challenges);
-  const startChallenge = useStore((s) => s.startChallenge);
   const reward = useStore((s) => s.reward);
   const logAi = useStore((s) => s.logAi);
   const d = useMemo(() => derive(events), [events]);
@@ -53,7 +51,6 @@ export default function PlayPage() {
   const [pin, setPin] = useState<LatLng | null>(null);
   const [busy, setBusy] = useState<"guess" | "hint" | null>(null);
   const [notice, setNotice] = useState("");
-  const [tab, setTab] = useState<"available" | "active" | "completed">("available");
   const scroller = useRef<HTMLDivElement>(null);
 
   const tier = skillTier(d.rounds);
@@ -154,11 +151,6 @@ export default function PlayPage() {
 
   // ---- lobby ----------------------------------------------------------------
   if (!round) {
-    const lists = {
-      available: CHALLENGES.filter((c) => !challenges[c.id]),
-      active: CHALLENGES.filter((c) => challenges[c.id] && !challenges[c.id].completedAt),
-      completed: CHALLENGES.filter((c) => challenges[c.id]?.completedAt),
-    };
     return (
       <div ref={scroller} data-scene="play-lobby" className="scroll-area h-full pb-8">
         <PageHeader title="Guess Boston" sub="One photo. Where in the city is it?" />
@@ -197,48 +189,6 @@ export default function PlayPage() {
           </p>
           <div className="mt-3 flex justify-center"><GeminiChip /></div>
 
-          <h2 id="challenges" className="mt-8 scroll-mt-4 text-[22px] font-bold">Challenges</h2>
-          <div data-tour="challenges" role="tablist" className="mt-2 flex rounded-full bg-sand p-1">
-            {(["available", "active", "completed"] as const).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cx("h-9 flex-1 rounded-full text-[14px] font-semibold capitalize", tab === t ? "bg-card text-ink shadow-card" : "text-ink-soft")}>
-                {t} ({lists[t].length})
-              </button>
-            ))}
-          </div>
-          {lists[tab].length ? (
-            <ul className="mt-1 divide-y divide-line">
-              {lists[tab].map((c) => {
-                const have = challengeProgress(c, challenges[c.id], events);
-                return (
-                  <li key={c.id} className="flex items-center gap-3.5 py-3.5">
-                    <span className={cx("grid size-11 shrink-0 place-items-center rounded-2xl", tab === "completed" ? "bg-gold text-forest-deep" : "bg-moss text-forest")}>
-                      <NamedIcon name={c.icon} size={21} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[16px] font-bold">{c.title}</span>
-                      <span className="block text-[13.5px] leading-snug text-ink-soft">{c.description}</span>
-                      {tab === "active" && (
-                        <span className="mt-1.5 flex items-center gap-2 text-[12.5px] font-semibold text-ink-soft">
-                          <Meter value={have / c.goal} className="flex-1" /> {have} of {c.goal}
-                        </span>
-                      )}
-                    </span>
-                    {tab === "available" ? (
-                      <Button size="sm" variant="secondary" onClick={() => (startChallenge(c.id), setTab("active"))} aria-label={`Accept ${c.title}`}>
-                        Accept
-                      </Button>
-                    ) : (
-                      <span className="shrink-0 text-[13.5px] font-bold text-gold">{tab === "completed" ? "Earned " : "+"}{c.xp} XP</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="mt-3 rounded-2xl bg-sand px-4 py-4 text-center text-[14.5px] text-ink-soft">
-              {tab === "available" ? "You have accepted every challenge. More are on the way." : tab === "active" ? "Accept a challenge to track it here." : "Finish a challenge and it lands here."}
-            </p>
-          )}
         </div>
       </div>
     );
