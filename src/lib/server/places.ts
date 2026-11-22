@@ -126,6 +126,7 @@ export async function searchTripPlaces(q: string, limit = 5): Promise<{ provider
   });
   if (!res.ok) throw new Error(`Google Places ${res.status}`);
   const data = (await res.json()) as { places?: GPlace[] };
+  console.log("[trips-debug] fields:", Object.keys(data.places?.[0] ?? {}).join(","), "| photos:", JSON.stringify(data.places?.[0]?.photos?.[0] ?? null).slice(0, 160)); // TEMP
   const places = (data.places ?? []).filter((p) => p.location && p.displayName?.text).map(toTripPlace).filter(inBox).slice(0, limit);
   return { provider: "google", places };
 }
