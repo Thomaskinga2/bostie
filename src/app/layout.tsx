@@ -11,7 +11,7 @@ const caveat = Caveat({ variable: "--font-caveat", subsets: ["latin"], weight: [
 
 export const metadata: Metadata = {
   title: "Bostie: make every ride an adventure",
-  description: "Turn Boston's MBTA into a city exploration game: guided journeys, station stamps, Gemini landmark recognition and Guess Boston.",
+  description: "Turn Boston's MBTA into a city exploration game: guided journeys, station stamps, Gemini landmark recognition and three Boston mini-games.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Bostie", statusBarStyle: "default" },
 };

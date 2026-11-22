@@ -54,7 +54,7 @@ export function ShowcaseLog({ dark }: { dark?: boolean }) {
   if (!ai.length)
     return (
       <p className={cx("rounded-2xl p-4 text-[14px]", dark ? "bg-white/[0.06] text-white/70" : "bg-paper text-ink-soft")}>
-        Nothing yet. Scan a landmark or type a guess in Guess Boston, and each Gemini request appears here with its
+        Nothing yet. Scan a landmark, ask for a hint in Bostie Guessing or submit a drawing, and each Gemini request appears here with its
         model, grounding, validated output and latency.
       </p>
     );

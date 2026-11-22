@@ -6,7 +6,7 @@ import { fail, rateLimited, readBody } from "@/lib/server/http";
 
 export const maxDuration = 30;
 
-const SYSTEM = `You write hints for Guess Boston, a photo guessing game about Boston.
+const SYSTEM = `You write hints for Bostie Guessing, a multiple-choice photo game about Boston.
 You know the answer; the player does not. Write the NEXT hint.
 
 - Use only the supplied ground truth (reference notes, visual cues, transit facts). Invent nothing.
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       source: "gemini",
       output: data,
       meta: {
-        feature: "Guess Boston · adaptive hint",
+        feature: "Bostie Guessing · hint",
         model,
         modality: "text → JSON",
         latencyMs,

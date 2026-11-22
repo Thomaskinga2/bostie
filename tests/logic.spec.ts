@@ -1,8 +1,9 @@
 // Deterministic rules: rewards, levels, streaks, routing, scoring. No browser, no network.
 import { expect, test } from "@playwright/test";
-import { aliasMatch, candidatePool, findByAlias, scoreMap, scoreText, skillTier } from "../src/lib/game";
+import { DAILY_PAID_PLAYS, GAMES, guessRound, paidPlaysLeft, PARKOUR_LEVELS, parkourQuestions, placeQuestion, playEvent, scoreMap, SUBJECTS } from "../src/lib/game";
+import { FIGURES } from "../src/data/trivia";
 import {
-  applyEvent, CHALLENGE, dayKey, derive, emptyProgress, levelFor, settle, STAMP, streakFor, totalXp, XP, type GameEvent, type RoundEvent,
+  applyEvent, CHALLENGE, dayKey, derive, playXp, emptyProgress, levelFor, settle, STAMP, streakFor, totalXp, XP, type GameEvent, type RoundEvent,
 } from "../src/lib/gamification";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -96,7 +97,7 @@ test.describe("streaks", () => {
     expect(s.current).toBe(0);
     expect(s.best).toBe(3);
   });
-  test("a Guess Boston round counts, so nobody has to travel to keep a streak", () => {
+  test("a game round counts, so nobody has to travel to keep a streak", () => {
     const round: RoundEvent = { t: "round", id: "r1", place: "state-house", mode: "mix", correct: false, score: 0, hints: 0, at: T0 };
     expect(streakFor([round], T0).current).toBe(1);
   });
@@ -127,33 +128,89 @@ test.describe("route planner", () => {
   });
 });
 
-test.describe("Guess Boston rules", () => {
-  test("alias matching forgives case, punctuation, articles and suffixes", () => {
-    expect(aliasMatch(PLACE["state-house"], "The State House, Boston")).toBe(true);
-    expect(aliasMatch(PLACE["kings-chapel"], "king's chapel")).toBe(true);
-    expect(aliasMatch(PLACE["stn-park-street"], "Park St. station")).toBe(true);
-    expect(aliasMatch(PLACE["state-house"], "old state house")).toBe(false);
-    expect(aliasMatch(PLACE["state-house"], "   ")).toBe(false);
-    expect(findByAlias("old ironsides")?.id).toBe("uss-constitution");
+test.describe("Bostie's Favourite rules", () => {
+  /** A repeatable stand-in for Math.random. */
+  const seeded = (seed = 7) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+
+  test("there are exactly three games", () => {
+    expect(GAMES.map((g) => g.name)).toEqual(["Bostie Guessing", "Bostie Drawing", "Bostie Parkour"]);
   });
-  test("scoring is deterministic: hints and misses cost, speed pays, wrong scores zero", () => {
-    expect(scoreText({ correct: true, wrong: 0, hints: 0, seconds: 0 })).toBe(1200);
-    expect(scoreText({ correct: true, wrong: 1, hints: 2, seconds: 60 })).toBe(500);
-    expect(scoreText({ correct: true, wrong: 2, hints: 3, seconds: 999 })).toBe(150);
-    expect(scoreText({ correct: false, wrong: 3, hints: 0, seconds: 5 })).toBe(0);
-    expect(scoreMap({ km: 0, hints: 0, seconds: 0 })).toEqual({ score: 1200, correct: true });
-    expect(scoreMap({ km: 5, hints: 0, seconds: 0 }).correct).toBe(false);
-    expect(scoreMap({ km: 0.2, hints: 0, seconds: 30 }).score).toBeGreaterThan(scoreMap({ km: 1, hints: 0, seconds: 30 }).score);
+
+  test("a question has four different answers, one of them right, the others the same kind of place", () => {
+    for (const id of ["state-house", "stn-park-street", "nbh-back-bay"]) {
+      const q = placeQuestion(PLACE[id], seeded());
+      expect(new Set(q.options).size).toBe(4);
+      expect(q.options.filter((o) => o === q.answer)).toHaveLength(1);
+      expect(q.answer).toBe(PLACE[id].name);
+      const kinds = q.options.map((o) => Object.values(PLACE).find((p) => p.name === o)!.kind);
+      expect(new Set(kinds).size).toBe(1);
+    }
   });
-  test("difficulty rises with recent scores and the pool respects mode and repeats", () => {
-    const r = (score: number): RoundEvent => ({ t: "round", id: String(Math.random()), place: "x", mode: "mix", correct: score > 0, score, hints: 0, at: T0 });
-    expect(skillTier([])).toBe(1);
-    expect(skillTier([r(1100), r(900), r(1000)])).toBe(3);
-    expect(skillTier([r(0), r(600), r(500)])).toBe(1);
-    expect(skillTier([r(500), r(600), r(500)])).toBe(2);
-    const pool = candidatePool("station", 1, ["stn-park-street"]);
-    expect(pool.length).toBeGreaterThan(0);
-    expect(pool.every((p) => p.kind === "station" && p.id !== "stn-park-street")).toBe(true);
+
+  test("a round is five different places from every category, and avoids the ones just played", () => {
+    const first = guessRound([], seeded(3));
+    expect(first).toHaveLength(5);
+    expect(new Set(first.map((q) => q.id)).size).toBe(5);
+    const second = guessRound(first.map((q) => q.id), seeded(3));
+    expect(second.some((q) => first.some((f) => f.id === q.id))).toBe(false);
+    const kinds = new Set(Array.from({ length: 12 }, (_, n) => guessRound([], seeded(n + 1))).flat().map((q) => PLACE[q.id].kind));
+    expect([...kinds].sort()).toEqual(["landmark", "neighborhood", "station"]);
+  });
+
+  test("a pin scores by distance and only counts as correct close to the spot", () => {
+    expect(scoreMap(0)).toEqual({ points: 100, correct: true });
+    expect(scoreMap(5).correct).toBe(false);
+    expect(scoreMap(0.2).points).toBeGreaterThan(scoreMap(1).points);
+  });
+
+  test("Parkour has 3, 5, 7 and 10 obstacles, each with its own question", () => {
+    expect(PARKOUR_LEVELS.map((l) => l.obstacles)).toEqual([3, 5, 7, 10]);
+    for (const { obstacles } of PARKOUR_LEVELS) {
+      const qs = parkourQuestions(obstacles, seeded(obstacles));
+      expect(qs).toHaveLength(obstacles);
+      expect(new Set(qs.map((q) => q.id)).size).toBe(obstacles);
+      for (const q of qs) expect(q.options.filter((o) => o === q.answer)).toHaveLength(1);
+    }
+    expect(parkourQuestions(10, seeded()).some((q) => q.id.startsWith("fig-"))).toBe(true);
+    expect(parkourQuestions(10, seeded()).some((q) => q.photo)).toBe(true);
+  });
+
+  test("every question about a person has one answer, three different wrong ones and a source", () => {
+    expect(FIGURES.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(FIGURES.map((f) => f.id)).size).toBe(FIGURES.length);
+    for (const f of FIGURES) {
+      expect(new Set([f.answer, ...f.wrong]).size, f.id).toBe(4);
+      expect(f.source, f.id).toMatch(/^https:\/\/en\.wikipedia\.org\/wiki\/\S+$/);
+      expect(f.q.includes(f.answer), `${f.id} gives its answer away`).toBe(false);
+    }
+  });
+
+  test("drawing subjects are landmarks with a photo, or symbols without one; no team mascots", () => {
+    expect(SUBJECTS.filter((s) => s.photo).length).toBeGreaterThanOrEqual(15);
+    expect(SUBJECTS.filter((s) => !s.photo).length).toBeGreaterThanOrEqual(5);
+    for (const s of SUBJECTS) expect(s.cues.length, s.id).toBeGreaterThan(1);
+    expect(SUBJECTS.some((s) => /wally|green monster|celtic|bruin|patriot|red sox/i.test(s.name))).toBe(false);
+  });
+
+  test("XP comes from the result, by fixed rules", () => {
+    const play = (over: object) => ({ t: "play" as const, id: "x", game: "guess" as const, score: 0, won: false, hints: 0, paid: true, at: T0, ...over });
+    expect(playXp(play({ score: 4 }))).toBe(20);
+    expect([0, 1, 30, 60, 100].map((score) => playXp(play({ game: "draw", score })))).toEqual([0, 10, 20, 30, 40]);
+    expect([0, 1, 2, 3].map((level) => playXp(play({ game: "parkour", won: true, level })))).toEqual([15, 30, 50, 80]);
+    expect(playXp(play({ game: "parkour", won: false, level: 3 }))).toBe(5);
+    expect(playXp(play({ score: 5, paid: false }))).toBe(0);
+  });
+
+  test("each game pays XP for five plays a day, then is free to play for nothing", () => {
+    let p = emptyProgress();
+    for (let n = 0; n < DAILY_PAID_PLAYS + 2; n++) p = applyEvent(p, playEvent(p.events, { game: "guess", score: 5, won: true, hints: 1 }, T0 + n * 1000));
+    expect(p.events.filter((e) => e.t === "play" && e.paid)).toHaveLength(DAILY_PAID_PLAYS);
+    expect(paidPlaysLeft(p.events, "guess", T0 + 60_000)).toBe(0);
+    expect(p.xp.filter((t) => t.key.startsWith("play:")).reduce((n, t) => n + t.amount, 0)).toBe(DAILY_PAID_PLAYS * 25);
+    expect(paidPlaysLeft(p.events, "draw", T0)).toBe(DAILY_PAID_PLAYS); // the limit is per game
+    expect(paidPlaysLeft(p.events, "guess", T0 + DAY)).toBe(DAILY_PAID_PLAYS); // and resets the next day
+    expect(new Set(p.xp.map((t) => t.key)).size).toBe(p.xp.length);
+    expect(derive(p.events).stats).toMatchObject({ rounds: DAILY_PAID_PLAYS + 2, correct: DAILY_PAID_PLAYS + 2 });
   });
 });
 

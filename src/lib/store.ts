@@ -1,7 +1,6 @@
 "use client";
 // Local-first guest state. Everything a judge does persists in localStorage with no
 // sign-up; when Supabase is configured the same progress is mirrored there (lib/sync.ts).
-import type { GameMode } from "./game";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AiMeta } from "./contracts";
@@ -80,9 +79,9 @@ type State = Progress & {
   toggleSaved: (id: string) => void;
   setShortcut: (kind: "home" | "work", stationId: string | null) => void;
   removeRecent: (stationId: string) => void;
-  /** The Guess Boston game picked last, so a game chosen elsewhere opens ready to start. */
-  playMode: GameMode;
-  setPlayMode: (m: GameMode) => void;
+  /** Game sounds. Off until the player turns them on. */
+  sound: boolean;
+  setSound: (on: boolean) => void;
   addTrailPoint: (p: TrailPoint) => void;
   clearTrail: () => void;
   dismissCelebration: () => void;
@@ -162,8 +161,8 @@ export const useStore = create<State>()(
         set((s) => ({ saved: s.saved.includes(id) ? s.saved.filter((x) => x !== id) : [...s.saved, id] })),
       setShortcut: (kind, stationId) => set(kind === "home" ? { home: stationId } : { work: stationId }),
       removeRecent: (stationId) => set((s) => ({ recents: s.recents.filter((id) => id !== stationId) })),
-      playMode: "mix",
-      setPlayMode: (playMode) => set({ playMode }),
+      sound: false,
+      setSound: (sound) => set({ sound }),
       addTrailPoint: (p) => set((s) => ({ trail: [...s.trail, p].slice(-TRAIL_CAP) })),
       clearTrail: () => set({ trail: [] }),
       dismissCelebration: () => set((s) => ({ celebrations: s.celebrations.slice(1) })),
@@ -252,7 +251,7 @@ export const useStore = create<State>()(
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({
         events: s.events, xp: s.xp, achievements: s.achievements, challenges: s.challenges, name: s.name,
-        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents, trail: s.trail,
+        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents, trail: s.trail, sound: s.sound,
       }),
     },
   ),

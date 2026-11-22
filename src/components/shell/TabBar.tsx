@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cx } from "../ui";
 
-// Four places. Scanning and Guess Boston are optional quests, reached from Discover.
+// Four places. Scanning and Bostie's Favourite are optional quests, reached from Discover.
 const TABS = [
   { href: "/", label: "Map", Icon: Map, also: [] as string[] },
   { href: "/ride", label: "Ride", Icon: TrainFront, also: ["/journey"] },

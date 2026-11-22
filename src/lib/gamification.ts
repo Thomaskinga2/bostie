@@ -17,7 +17,14 @@ export type RoundEvent = {
 export type JourneyEvent = {
   t: "journey"; id: string; from: string; to: string; stops: number; lines: LineId[]; minutes: number; km: number; demo: boolean; at: number;
 };
-export type GameEvent = StationEvent | LandmarkEvent | RoundEvent | JourneyEvent;
+export type GameId = "guess" | "draw" | "parkour";
+/**
+ * One finished play of a Bostie's Favourite game. `score` is correct answers (guess),
+ * the drawing score 0 to 100 (draw) or obstacles cleared (parkour). `paid` is false once
+ * the day's XP limit for that game is used up.
+ */
+export type PlayEvent = { t: "play"; id: string; game: GameId; score: number; won: boolean; hints: number; level?: number; paid: boolean; at: number };
+export type GameEvent = StationEvent | LandmarkEvent | RoundEvent | JourneyEvent | PlayEvent;
 
 export type XpTx = { key: string; amount: number; label: string; at: number };
 export type ChallengeState = { startedAt: number; completedAt?: number };
@@ -38,7 +45,22 @@ export const XP = {
   journeyBase: 60,
   journeyPerStop: 10,
   roundMin: 5,
+  guessPerCorrect: 5,
+  /** Drawing score bands: 1+, 25+, 50+, 75+. */
+  draw: [10, 20, 30, 40],
+  /** A cleared Parkour run by difficulty; a failed run earns `parkourTry`. */
+  parkourWin: [15, 30, 50, 80],
+  parkourTry: 5,
 } as const;
+
+const GAME_NAME: Record<GameId, string> = { guess: "Bostie Guessing", draw: "Bostie Drawing", parkour: "Bostie Parkour" };
+/** XP for a finished play. Zero once the day's limit for that game is reached. */
+export function playXp(e: PlayEvent): number {
+  if (!e.paid) return 0;
+  if (e.game === "guess") return XP.guessPerCorrect * e.score;
+  if (e.game === "draw") return e.score < 1 ? 0 : XP.draw[Math.min(3, Math.floor(e.score / 25))];
+  return e.won ? XP.parkourWin[e.level ?? 0] : XP.parkourTry;
+}
 
 function xpForEvent(e: GameEvent): { amount: number; label: string } {
   switch (e.t) {
@@ -51,7 +73,9 @@ function xpForEvent(e: GameEvent): { amount: number; label: string } {
         : { amount: XP.landmarkVerified, label: `Landmark verified · ${name}` };
     }
     case "round":
-      return { amount: Math.max(XP.roundMin, Math.round(e.score / 20)), label: "Guess Boston round" };
+      return { amount: Math.max(XP.roundMin, Math.round(e.score / 20)), label: "Guessing round" };
+    case "play":
+      return { amount: playXp(e), label: e.paid ? GAME_NAME[e.game] : `${GAME_NAME[e.game]} (daily XP limit reached)` };
     case "journey":
       return { amount: XP.journeyBase + XP.journeyPerStop * e.stops, label: "Journey completed" };
   }
@@ -159,10 +183,12 @@ export function derive(events: GameEvent[]) {
   const landmarks = new Map<string, LandmarkEvent>();
   const rounds: RoundEvent[] = [];
   const journeys: JourneyEvent[] = [];
+  const plays: PlayEvent[] = [];
   for (const e of events) {
     if (e.t === "station") stations.set(e.id, e);
     else if (e.t === "landmark") landmarks.set(e.id, e);
     else if (e.t === "round") rounds.push(e);
+    else if (e.t === "play") plays.push(e);
     else journeys.push(e);
   }
 
@@ -182,8 +208,11 @@ export function derive(events: GameEvent[]) {
   if (FREEDOM_TRAIL.every((l) => landmarks.has(l.id))) stamps["set:freedom-trail"] = last;
   if (lines.Red.have === lines.Red.total) stamps["set:red-line"] = last;
 
-  const correct = rounds.filter((r) => r.correct).length;
+  // Games played and won: the older one-photo rounds count alongside the three games.
+  const games = rounds.length + plays.length;
+  const correct = rounds.filter((r) => r.correct).length + plays.filter((p) => p.won).length;
   return {
+    plays,
     stations,
     landmarks,
     rounds,
@@ -195,9 +224,9 @@ export function derive(events: GameEvent[]) {
       landmarks: landmarks.size,
       journeys: journeys.length,
       km: journeys.reduce((s, j) => s + j.km, 0),
-      rounds: rounds.length,
+      rounds: games,
       correct,
-      accuracy: rounds.length ? correct / rounds.length : 0,
+      accuracy: games ? correct / games : 0,
       bestScore: rounds.reduce((m, r) => Math.max(m, r.score), 0),
     },
   };
@@ -257,10 +286,10 @@ export const ACHIEVEMENTS: Achievement[] = [
     check: (d) => [d.lines.Red.have, 5] },
   { id: "boston-historian", name: "Boston Historian", description: "Verify 5 historical landmarks.", xp: 150, icon: "landmark",
     check: (d) => [d.stats.landmarks, 5] },
-  { id: "guess-champion", name: "Guess Boston Champion", description: "Win 5 Guess Boston rounds.", xp: 120, icon: "trophy",
+  { id: "guess-champion", name: "Bostie's Champion", description: "Win 5 games in Bostie's Favourite.", xp: 120, icon: "trophy",
     check: (d) => [d.stats.correct, 5] },
-  { id: "sharp-eye", name: "Sharp Eye", description: "Win a round without using a hint.", xp: 40, icon: "eye",
-    check: (d) => [d.rounds.some((r) => r.correct && r.hints === 0) ? 1 : 0, 1] },
+  { id: "sharp-eye", name: "Sharp Eye", description: "Win a Bostie Guessing round without using a hint.", xp: 40, icon: "eye",
+    check: (d) => [d.rounds.some((r) => r.correct && r.hints === 0) || d.plays.some((p) => p.game === "guess" && p.won && p.hints === 0) ? 1 : 0, 1] },
   { id: "weekend-explorer", name: "Weekend Explorer", description: "Collect a station or landmark on a weekend.", xp: 60, icon: "sun",
     check: (d) => [[...d.stations.values(), ...d.landmarks.values()].some((e) => isWeekend(e.at)) ? 1 : 0, 1] },
   { id: "transfer-pro", name: "Transfer Pro", description: "Collect 3 transfer hubs.", xp: 80, icon: "shuffle",
@@ -291,13 +320,13 @@ export const CHALLENGES: Challenge[] = [
     measure: (ev) => ev.filter((e) => e.t === "station").length },
   { id: "landmark-hunter", title: "Landmark Hunter", description: "Verify a historical landmark with the scanner.", xp: 60, goal: 1, icon: "camera", source: "template",
     measure: (ev) => ev.filter((e) => e.t === "landmark").length },
-  { id: "three-rounds", title: "Know Your City", description: "Finish 3 Guess Boston rounds.", xp: 50, goal: 3, icon: "gamepad", source: "template",
+  { id: "three-rounds", title: "Know Your City", description: "Finish 3 games.", xp: 50, goal: 3, icon: "gamepad", source: "template",
     measure: (ev) => ev.filter((e) => e.t === "round").length },
   { id: "red-three", title: "Seeing Red", description: "Collect 3 Red Line stations.", xp: 70, goal: 3, icon: "route", source: "template",
     measure: (ev) => ev.filter((e) => e.t === "station" && STATION[e.id]?.lines.includes("Red")).length },
   { id: "guided-journey", title: "Door to Door", description: "Complete a guided journey from start to finish.", xp: 50, goal: 1, icon: "train", source: "template",
     measure: (ev) => ev.filter((e) => e.t === "journey").length },
-  { id: "no-hints", title: "No Peeking", description: "Win a Guess Boston round without hints.", xp: 40, goal: 1, icon: "eye", source: "template",
+  { id: "no-hints", title: "No Peeking", description: "Win a round without hints.", xp: 40, goal: 1, icon: "eye", source: "template",
     measure: (ev) => ev.filter((e) => e.t === "round" && e.correct && e.hints === 0).length },
 ];
 export const CHALLENGE: Record<string, Challenge> = Object.fromEntries(CHALLENGES.map((c) => [c.id, c]));

@@ -182,7 +182,7 @@ export default function DiscoverPage() {
         <ul className="mt-2 divide-y divide-line">
           {[
             { href: "/scan", Icon: Camera, title: "Scan a landmark", body: "Photograph one and Gemini verifies it for a stamp." },
-            { href: "/play", Icon: Gamepad2, title: "Guess Boston", body: "Name the place in the photo. Good for the platform." },
+            { href: "/play", Icon: Gamepad2, title: "Bostie's Favourite", body: "Three quick games: guess, draw and run. Good for the platform." },
           ].map(({ href, Icon, title, body }) => (
             <li key={href}>
               <Link href={href} className="flex items-center gap-3.5 py-3.5">

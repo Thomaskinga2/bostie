@@ -49,34 +49,12 @@ export type ScanResponse = {
   meta: AiMeta;
 };
 
-// --- Guess Boston ----------------------------------------------------------
+// --- Bostie's Favourite ----------------------------------------------------------
 
-const Guesses = z.array(z.string().max(200)).max(10);
-
-export const GuessRequest = z.object({
-  placeId: z.string(),
-  guess: z.string().trim().min(1).max(200),
-  previous: Guesses.default([]),
-});
-export const GuessOutput = z.object({
-  resolvedId: z.string().nullable().describe("Catalogue id the player's text names, or null"),
-  interpretation: z.string().describe("What you understood the player to mean, in a few words"),
-  feedback: z.string().describe("One or two friendly sentences. Never names the answer."),
-});
-export type GuessResponse = {
-  verdict: "correct" | "close" | "incorrect";
-  resolved: { id: string; name: string } | null;
-  resolvedBy: "alias" | "gemini" | "none";
-  km: number | null;
-  feedback: string;
-  /** null when the answer was settled without a model call, or Gemini was unreachable. */
-  meta: AiMeta | null;
-  output?: unknown;
-};
 
 export const HintRequest = z.object({
   placeId: z.string(),
-  previous: Guesses.default([]),
+  previous: z.array(z.string().max(200)).max(10).default([]),
   hints: z.array(z.string().max(400)).max(3).default([]),
 });
 export const HintOutput = z.object({
@@ -85,33 +63,18 @@ export const HintOutput = z.object({
 });
 export type HintResponse = { hint: string; angle: string; source: "gemini" | "offline"; meta: AiMeta | null; output?: unknown };
 
-export const DebriefRequest = z.object({
-  placeId: z.string(),
-  mode: z.enum(["mix", "landmark", "station", "neighborhood", "map"]),
-  guesses: Guesses.default([]),
-  correct: z.boolean(),
-  score: z.number(),
-  hints: z.number().int().min(0).max(3),
-  pinKm: z.number().nullable().default(null),
-  /** Recent rounds, oldest first: drives the difficulty tier and avoids repeats. */
-  recent: z
-    .array(z.object({ place: z.string(), correct: z.boolean(), score: z.number() }))
-    .max(12)
-    .default([]),
+export const DrawRequest = z.object({
+  subjectId: z.string().max(60),
+  /** The drawing as base64 JPEG, without the data: prefix. About 1 MB at most. */
+  image: z.string().min(100).max(1_400_000),
 });
-export const DebriefOutput = z.object({
-  tells: z.string().describe("What in the photo gives this place away. One or two sentences."),
-  history: z.string().describe("Why it matters to Boston, from the reference notes. One or two sentences."),
-  transit: z.string().describe("How to reach it on the T, from the supplied transit facts. One sentence."),
-  coaching: z.string().describe("A personal note on this player's guesses. One sentence."),
-  nextPlaceId: z.string().describe("Id chosen from the supplied next-round options"),
-  nextReason: z.string().describe("Why that round suits this player. One short sentence."),
+export const DrawOutput = z.object({
+  score: z.number().describe("0 to 100: how recognizable the drawing is as the subject. 0 for blank or unrelated."),
+  recognizableFeatures: z.array(z.string().max(80)).max(5).describe("Features of the subject that are visible in the drawing"),
+  missingFeatures: z.array(z.string().max(80)).max(5).describe("Major features of the subject that are missing"),
+  feedback: z.string().max(240).describe("One or two warm, encouraging sentences to the player"),
 });
-export type DebriefResponse = {
-  debrief: z.infer<typeof DebriefOutput> | null;
-  next: { placeId: string; reason: string; tier: 1 | 2 | 3; chosenBy: "gemini" | "random" };
-  meta: AiMeta | null;
-};
+export type DrawResponse = { score: number; recognizableFeatures: string[]; missingFeatures: string[]; feedback: string; source: "gemini" | "blank"; meta: AiMeta | null };
 
 // --- MBTA ------------------------------------------------------------------
 

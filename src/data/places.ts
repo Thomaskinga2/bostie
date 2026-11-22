@@ -1,4 +1,4 @@
-// Curated ground truth for landmarks and Guess Boston locations.
+// Curated ground truth for landmarks and the places used in Bostie's Favourite.
 // Everything Gemini says about a place is grounded in (and validated against) this file:
 // the model never invents an answer, an identifier, or a history fact that is not here.
 // Keep this file dependency-free: scripts/fetch-wiki.mjs imports it directly.

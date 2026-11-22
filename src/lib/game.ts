@@ -1,25 +1,23 @@
-// Guess Boston — deterministic rules. Gemini understands language and writes hints;
-// answers, scoring, difficulty tiers and XP are all decided here, by code.
-import type { RoundEvent } from "./gamification";
-import { photoOf, PLACES, type Place } from "./places";
+// Bostie's Favourite: the rules of the three games. Everything here is decided by code:
+// which answer is right, the score, and whether a play still earns XP today. Gemini only
+// writes hint wording (Guessing) and gives an opinion on a drawing (Drawing).
+import { FIGURES, SYMBOLS } from "@/data/trivia";
+import { dayKey, type GameEvent, type GameId, type PlayEvent } from "./gamification";
+import { photoOf, PLACE, PLACES, type Place } from "./places";
 
-export type GameMode = "mix" | "landmark" | "station" | "neighborhood" | "map";
+export type { GameId };
 
-/** `photo` is a catalogue place that shows what the game looks like; `about` says how it is played. */
-export const MODES: { id: GameMode; name: string; blurb: string; about: string; photo: string }[] = [
-  { id: "mix", name: "Classic", blurb: "Anything in the city. Name what you see.", about: "A photo from anywhere in Boston. Type what it is.", photo: "custom-house" },
-  { id: "landmark", name: "Landmarks", blurb: "Historic sites and icons.", about: "A famous building or historic site. Name it.", photo: "state-house" },
-  { id: "station", name: "Stations", blurb: "Which MBTA stop is this?", about: "A photo of a T station. Say which stop it is.", photo: "stn-park-street" },
-  { id: "neighborhood", name: "Neighborhoods", blurb: "Read the streets.", about: "A street scene. Guess the neighborhood.", photo: "nbh-back-bay" },
-  { id: "map", name: "Pin Drop", blurb: "Skip the name. Drop a pin on the map.", about: "No typing: tap the map where you think the photo was taken.", photo: "nbh-north-end" },
+/** `photo` is a catalogue place that pictures the game; `about` says how it is played. */
+export const GAMES: { id: GameId; name: string; about: string; photo: string; href: string }[] = [
+  { id: "guess", name: "Bostie Guessing", about: "See a photo of Boston and pick what it is from four answers.", photo: "state-house", href: "/play/guess" },
+  { id: "draw", name: "Bostie Drawing", about: "Draw a Boston landmark or symbol. Gemini says how close you got.", photo: "nbh-north-end", href: "/play/draw" },
+  { id: "parkour", name: "Bostie Parkour", about: "Bostie runs through Boston. Answer in 6 seconds so he clears each obstacle.", photo: "custom-house", href: "/play/parkour" },
 ];
 
-export const MAX_ATTEMPTS = 3;
-export const MAX_HINTS = 3;
-export const HINT_PENALTY = 150;
-export const WRONG_PENALTY = 200;
 /** A pin within this distance counts as a correct answer. */
 export const PIN_CORRECT_KM = 0.35;
+export const ROUND_LENGTH = 5;
+export const POINTS = { correct: 100, withHint: 50 };
 
 export const normalize = (s: string) =>
   s
@@ -34,46 +32,78 @@ export const normalize = (s: string) =>
     .replace(/ (t )?(station|stop)$/, "")
     .trim();
 
-export function aliasMatch(place: Place, guess: string): boolean {
-  const g = normalize(guess);
-  return g.length > 0 && [place.name, ...place.aliases].some((a) => normalize(a) === g);
+/** Points for a pin on the map: full marks on the spot, fading with distance. */
+export function scoreMap(km: number): { points: number; correct: boolean } {
+  return { points: Math.round(POINTS.correct * Math.exp(-km / 0.8)), correct: km <= PIN_CORRECT_KM };
 }
 
-/** Exact-alias entity resolution over the catalogue. Gemini handles everything fuzzier. */
-export const findByAlias = (guess: string, pool: Place[] = PLACES) => pool.find((p) => aliasMatch(p, guess));
-
-const timeBonus = (seconds: number) => Math.round(200 * Math.max(0, 1 - seconds / 60));
-
-export function scoreText(r: { correct: boolean; wrong: number; hints: number; seconds: number }): number {
-  if (!r.correct) return 0;
-  return Math.max(100, 1000 - WRONG_PENALTY * r.wrong - HINT_PENALTY * r.hints + timeBonus(r.seconds));
+export type Rng = () => number;
+export const pickRandom = <T,>(items: T[], rng: Rng = Math.random): T => items[Math.floor(rng() * items.length)];
+export function shuffle<T>(items: T[], rng: Rng = Math.random): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
-export function scoreMap(r: { km: number; hints: number; seconds: number }): { score: number; correct: boolean } {
-  const correct = r.km <= PIN_CORRECT_KM;
-  const base = Math.round(1000 * Math.exp(-r.km / 0.8));
-  const score = Math.max(0, base - HINT_PENALTY * r.hints + (correct ? timeBonus(r.seconds) : 0));
-  return { score, correct };
+/** One multiple-choice question. `photo` is a catalogue place id when the question shows a picture. */
+export type Question = { id: string; prompt: string; photo?: string; options: string[]; answer: string; note?: string; source?: string };
+
+const PLAYABLE = PLACES.filter((p) => photoOf(p.id));
+const PROMPT: Record<Place["kind"], string> = { landmark: "What is this?", station: "Which T station is this?", neighborhood: "Which neighborhood is this?" };
+
+/** A photo question: the place, plus three wrong names of the same kind where there are enough. */
+export function placeQuestion(place: Place, rng: Rng = Math.random): Question {
+  const same = shuffle(PLAYABLE.filter((p) => p.kind === place.kind && p.id !== place.id), rng);
+  const others = shuffle(PLAYABLE.filter((p) => p.kind !== place.kind), rng);
+  const wrong = [...same, ...others].slice(0, 3).map((p) => p.name);
+  return { id: place.id, prompt: PROMPT[place.kind], photo: place.id, options: shuffle([place.name, ...wrong], rng), answer: place.name, note: place.summary };
 }
 
-/** Difficulty tier from the last four rounds: play well and the rounds get harder. */
-export function skillTier(rounds: RoundEvent[]): 1 | 2 | 3 {
-  const recent = rounds.slice(-4);
-  if (recent.length < 2) return 1;
-  const avg = recent.reduce((s, r) => s + r.score, 0) / recent.length;
-  return avg >= 750 ? 3 : avg >= 400 ? 2 : 1;
+/** A round of Bostie Guessing: distinct places from every category, avoiding the ones just played. */
+export function guessRound(avoid: string[] = [], rng: Rng = Math.random, n = ROUND_LENGTH): Question[] {
+  const fresh = PLAYABLE.filter((p) => !avoid.includes(p.id));
+  const pool = fresh.length >= n ? fresh : PLAYABLE;
+  return shuffle(pool, rng).slice(0, n).map((p) => placeQuestion(p, rng));
 }
 
-/** Eligible next locations: right kind, has a licensed photo, not played recently, tier-appropriate. */
-export function candidatePool(mode: GameMode, tier: 1 | 2 | 3, recent: string[]): Place[] {
-  const kindOk = (p: Place) => mode === "mix" || mode === "map" || p.kind === mode;
-  const all = PLACES.filter((p) => kindOk(p) && photoOf(p.id));
-  const fresh = all.filter((p) => !recent.slice(-6).includes(p.id));
-  const base = fresh.length ? fresh : all;
-  const exact = base.filter((p) => p.difficulty === tier);
-  if (exact.length >= 2) return exact;
-  const upTo = base.filter((p) => p.difficulty <= tier);
-  return upTo.length ? upTo : base;
+export const PARKOUR_LEVELS = [
+  { name: "Easy", obstacles: 3 },
+  { name: "Medium", obstacles: 5 },
+  { name: "Hard", obstacles: 7 },
+  { name: "Impossible", obstacles: 10 },
+] as const;
+export const PARKOUR_SECONDS = 6;
+
+/** Questions for a Parkour run: Boston people and Guessing photos, mixed, none repeated. */
+export function parkourQuestions(n: number, rng: Rng = Math.random): Question[] {
+  const people = shuffle(FIGURES, rng).map((f): Question => ({ id: `fig-${f.id}`, prompt: f.q, options: shuffle([f.answer, ...f.wrong], rng), answer: f.answer, source: f.source }));
+  const photos = shuffle(PLAYABLE, rng).map((p) => placeQuestion(p, rng));
+  // Two people for every photo, so a run reads quickly at running speed.
+  const out: Question[] = [];
+  for (let i = 0; out.length < n; i++) out.push((i % 3 === 2 ? photos : people).shift() ?? people.shift() ?? photos.shift()!);
+  return out;
 }
 
-export const pickRandom = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
+/** What Bostie Drawing can ask for: catalogue landmarks (with a reference photo) and generic symbols (without). */
+export type Subject = { id: string; name: string; cues: string[]; photo?: string };
+export const SUBJECTS: Subject[] = [
+  ...PLAYABLE.filter((p) => p.kind === "landmark").map((p) => ({ id: p.id, name: p.name, cues: p.cues, photo: p.id })),
+  ...SYMBOLS,
+];
+export const SUBJECT: Record<string, Subject> = Object.fromEntries(SUBJECTS.map((s) => [s.id, s]));
+export const nextSubject = (avoid: string[] = [], rng: Rng = Math.random) => pickRandom(SUBJECTS.filter((s) => !avoid.includes(s.id)).length ? SUBJECTS.filter((s) => !avoid.includes(s.id)) : SUBJECTS, rng);
+
+/** Plays of one game that earn XP each local day. Later plays still work, for fun. */
+export const DAILY_PAID_PLAYS = 5;
+export const paidPlaysLeft = (events: GameEvent[], game: GameId, now: number) =>
+  Math.max(0, DAILY_PAID_PLAYS - events.filter((e) => e.t === "play" && e.game === game && e.paid && dayKey(e.at) === dayKey(now)).length);
+
+/** The event for a finished play, marked as paid or not from today's history. */
+export function playEvent(events: GameEvent[], play: Omit<PlayEvent, "t" | "id" | "paid" | "at">, now: number): PlayEvent {
+  return { t: "play", id: `${play.game}-${now.toString(36)}`, ...play, paid: paidPlaysLeft(events, play.game, now) > 0, at: now };
+}
+
+export const placeOf = (q: Question) => (q.photo ? PLACE[q.photo] : undefined);

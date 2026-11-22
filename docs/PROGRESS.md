@@ -12,7 +12,7 @@ Status as of 2026-11-21. Priorities follow the build brief (P0 required, P1 afte
 | Route planning with transfers, train arrivals | Done | Logic tests (every station reaches Park Street), live MBTA smoke check |
 | Exploration map | Done on the schematic backend; Google backend untested (no key) | Navigation test, manual |
 | Gemini landmark scanner with deterministic validation | Done | Live smoke test (3 photos), mocked flow tests |
-| Guess Boston (text, pin drop, hints, debrief, adaptive next round) | Done | Live smoke test, mocked flow tests |
+| Guess Boston | Replaced by Bostie's Favourite (see below) | |
 | XP, levels, station and landmark stamps | Done | Logic tests, flow tests |
 | Digital passport | Done | Flow tests |
 | End-to-end judge demo with reset | Done | Full demo flow test at phone and desktop size |
@@ -41,6 +41,7 @@ Saved places, service alerts, journey and discovery history, achievement badges,
 | Share a discovery, My day recap, heat map, GPS trail (device only) | Done. Not checked on a real phone: the native share menu, and an outdoor GPS trail. No heat layer on the Google Maps backend | Recap logic tests; share, My day and tracking flow tests; generated pictures reviewed |
 | Route planning requirements: official directions, branch-aware departures with platform, Scheduled fallback, step-by-step list, Google transit alternatives, Enter-with-no-match message | Done. Google routes not checked live (no key in local env; needs Routes API enabled on the Vercel key) | Logic tests for directions, train matching, steps and Google-route conversion; four flow tests; live MBTA predictions checked on the dev server |
 | Games listed with pictures on the waiting screen and in Guess Boston | Done | Demo flow test, screenshot |
+| Bostie's Favourite: Bostie Guessing (multiple choice), Bostie Drawing (Gemini sketch judge), Bostie Parkour (3D runner), shared mascot reactions, generated sounds, daily XP limit | Done. Not checked on a real phone: touch drawing feel, 3D frame rate on older devices, sound | Logic tests for questions, XP and the daily limit; flow tests for all three games; a real Gemini call scored a random squiggle 5% |
 
 ## P2 and not built
 

@@ -1,11 +1,11 @@
 # Bostie
 
-**Make every ride an adventure.** Bostie turns Boston's MBTA into a city exploration game: plan a real route, collect a stamp at every station you ride through, let Gemini verify the landmarks you photograph, and play Guess Boston while you wait for the train.
+**Make every ride an adventure.** Bostie turns Boston's MBTA into a city exploration game: plan a real route, collect a stamp at every station you ride through, let Gemini verify the landmarks you photograph, and play three little Boston games while you wait for the train.
 
 Built for two hackathon tracks: **Transit Gamification** and **Best Use of Gemini API**.
 
 - Mobile-first web app. On a phone it fills the screen; on a desktop it runs inside an interactive iPhone frame.
-- Four tabs: **Map** (the adventure map, with Plan a ride and Explore Boston), **Ride**, **Discover** and **Passport**. Scanning and Guess Boston are optional quests reached from Discover.
+- Four tabs: **Map** (the adventure map, with Plan a ride and Explore Boston), **Ride**, **Discover** and **Passport**. Scanning and Bostie's Favourite are optional quests reached from Discover.
 - **Demo Mode** is separate: only when it is on do the judge walkthrough, the gold next-step strip and the live log of Gemini calls appear. Regular visitors get a clean interface.
 - No account, no install. A guest's progress is stored on the device (and mirrored to Supabase when configured).
 
@@ -17,7 +17,7 @@ cp .env.example .env.local   # add GEMINI_API_KEY; everything else is optional
 npm run dev                  # http://localhost:3000
 ```
 
-The app runs with only `GEMINI_API_KEY`. Without it, transit, the map, stamps and the passport still work; scanning shows an error and Guess Boston falls back to exact-name matching and offline hints.
+The app runs with only `GEMINI_API_KEY`. Without it, transit, the map, stamps and the passport still work; scanning and Bostie Drawing show an error, and Bostie Guessing hints fall back to offline cues. Bostie Guessing answers and Bostie Parkour need no AI at all.
 
 ## What it does
 
@@ -29,7 +29,7 @@ The app runs with only `GEMINI_API_KEY`. Without it, transit, the map, stamps an
 | Arrivals and alerts | Live MBTA V3 predictions and service alerts through cached server routes. | Labelled **Live MBTA**. If the API fails the UI says so; it never invents times. |
 | Demo mode | A scripted Harvard → Central → Kendall/MIT → Charles/MGH → Park Street ride with simulated departures and position. | Always labelled **Demo data**. Gemini calls in demo mode are real. |
 | Landmark scanner | One multimodal Gemini call: photo + player position + a 20-landmark catalogue with visual cues and reference notes → schema-constrained JSON. | Deterministic checks decide whether a stamp is granted (see below). |
-| Guess Boston | Photo guessing game. Gemini links free-text guesses to catalogue entries, writes adaptive hints, writes the debrief and picks the next round from a server-built pool. | Answers, scoring, difficulty tiers and XP are all code. |
+| Bostie's Favourite | Three optional games. **Bostie Guessing**: five photos, four answers each, a hint that removes two, or answer on the map. **Bostie Drawing**: sketch a landmark or symbol and Gemini says how recognizable it is. **Bostie Parkour**: a 3D run (three.js) where each obstacle asks a question with six seconds to answer; 3, 5, 7 or 10 obstacles. | Right answers, scores and XP are all code. Each game pays XP for the first 5 plays a day. Parkour's questions about people are a written list with a source link each (`src/data/trivia.ts`). Drawings are never stored. Sounds are generated in the browser and start muted. |
 | Gamification | XP ledger, 12 levels, streaks, 10 achievements, 148 stamps. (Challenges were removed from the app; the engine still supports them.) | One pure engine (`src/lib/gamification.ts`); every reward is an idempotent transaction. |
 | Passport | Stamp collection with search and filters, line completion, badges, journey and discovery history, saved places, XP ledger. | |
 | Route planning | Searchable stations and places; step-by-step list (walk, board, ride, change, walk); the MBTA's own direction names and destinations; departures limited to trains that reach your stop, with the platform; up to three subway alternatives, plus bus and Commuter Rail routes from Google when available. | Departures are badged **Live MBTA**, **Scheduled** (timetable, when the MBTA has no predictions for the station) or **Demo data**. Google routes need the **Routes API** enabled on `GOOGLE_MAPS_API_KEY`; without it only Bostie's own routes show. Bus and Commuter Rail routes are information only (no guidance or stamps), and their fares come from the MBTA fare table, never from Google. |
@@ -53,11 +53,10 @@ Gemini receives the photo, the player's position (GPS or simulated, with distanc
 
 An uncertain or failed scan grants nothing and asks for a better photo. The photo is processed in memory and never stored.
 
-**2. Guess Boston engine** (`src/app/api/game/*`), text → JSON, three roles
+**2. Bostie's Favourite** (`src/app/api/game/*`)
 
-- **Judge**: links the player's words ("that gold dome building by the Common", "old ironsides") to one catalogue id. The server compares that id with the ground truth, so the model cannot be talked into a win. Exact names are settled without a model call.
-- **Hints**: adaptive to previous guesses and escalating (visual → history → transit). Every hint passes an answer-leak check; a leaking hint is replaced with a curated cue.
-- **Debrief and next round**: explains the tells, the history and how to get there on the T, coaches the player, and chooses the next location. The difficulty tier and the pool of options are computed by code; a choice outside the pool is discarded.
+- **Hints** (text → JSON): a clue for the photo in Bostie Guessing, written from the catalogue's reference notes. Every hint passes an answer-leak check; a leaking hint is replaced with a curated cue.
+- **Sketch judge** (image + text → JSON): looks at a Bostie Drawing sketch with the subject's key features and returns a 0 to 100 recognizability score, the features it can see, the ones missing, and one line of encouragement. The server clamps and validates the score, refuses near-empty canvases before calling the model, and maps the score to XP by fixed bands. Text inside a drawing is treated as part of the picture, never as an instruction.
 
 Every response is constrained with a JSON schema and re-validated with zod (`src/lib/server/gemini.ts`). Calls go through a model chain (default `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`) that falls through on overload or timeout. All four endpoints have a non-AI fallback, so the game stays playable if Gemini is down.
 
@@ -77,7 +76,7 @@ src/
     passport/   passport sections
   lib/
     gamification.ts   events + XP ledger → levels, stamps, streaks, achievements, challenges (pure)
-    game.ts           Guess Boston rules: alias matching, scoring, difficulty, pools (pure)
+    game.ts           Bostie's Favourite rules: questions, scoring, daily XP limit (pure)
     network.ts        MBTA network + route planner (pure)
     store.ts          zustand store, persisted to localStorage; journey state machine
     contracts.ts      zod schemas shared by routes and client
@@ -160,7 +159,7 @@ All of that wording lives in one file, `src/lib/guide.ts`. A feature is linked t
 
 1. **Map**: the adventure map with your level and the two main actions. Tap **Plan a ride**: the search-first Ride screen opens with shortcuts (map, home, work, alerts), popular or recent stations, and departures labelled *Demo data*. Tap **Park Street** to plan the trip from Harvard, or type any station, line or landmark.
 2. **Route**: one Red Line leg, four stops, estimated time, and the fare ($2.40) with the ways to pay. Open **Fare breakdown and how to pay** to see the detail and the link to MBTA's fares. **Start journey**, then **I am at the station**.
-3. **Waiting**: tap **Play Guess Boston while you wait**. Type a description rather than a name. Watch the judge call appear in the Gemini panel, then read the debrief.
+3. **Waiting**: under **Play while you wait**, tap **Bostie Guessing** and play a round of five photos. Then try **Bostie Drawing** (watch the sketch judge call appear in the Gemini panel) and **Bostie Parkour** from the games screen.
 4. Back to the journey (the demo strip at the top takes you there): **My train is here** stamps Harvard. Confirm Central, Kendall/MIT, Charles/MGH and Park Street. Five stamps, the Red Line Explorer badge, a few level-ups.
 5. **Explore nearby** lists landmarks around Park Street. Open **Scan** (the gold strip takes you there), tap the State House sample photo (or upload your own, or use the camera). A real Gemini call verifies it; the verification checks are listed under the result.
 6. **Complete journey**, then **Open passport**: stamps, badges, line progress, the journal and the XP ledger.

@@ -2,7 +2,9 @@
 // Runs twice: at phone size, and at desktop size inside the iPhone demo frame.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { FIGURES } from "../src/data/trivia";
 import { guideStep, TIP, TOUR, type GuideStepId, type Scene } from "../src/lib/guide";
+import { PLACE } from "../src/lib/places";
 
 /** The button label the guide tells a judge to tap. The demo is driven by these, so the guide cannot drift from the app. */
 const control = (id: GuideStepId, n = 0) => guideStep(id).controls[n];
@@ -26,7 +28,7 @@ const scanOk = (id = "state-house", name = "Massachusetts State House") => ({
   meta: { ...META, feature: "Landmark recognition", modality: "image + text → JSON" },
 });
 
-type Mocks = Partial<Record<"scan" | "guess" | "hint" | "debrief" | "predictions" | "alerts" | "places" | "routes", (route: Route) => unknown>>;
+type Mocks = Partial<Record<"scan" | "hint" | "draw" | "predictions" | "alerts" | "places" | "routes", (route: Route) => unknown>>;
 
 /** Stand-in location search: knows two real Boston places, nothing else. */
 const PLACE_HITS = [
@@ -53,15 +55,9 @@ async function mockApis(page: Page, over: Mocks = {}) {
     return route.fulfill({ json: { provider: "openstreetmap", places: PLACE_HITS.filter((p) => q.includes(p.match)).map((p) => p.hit) } });
   }));
   await page.route("**/api/scan", over.scan ?? json(scanOk()));
-  await page.route("**/api/game/guess", over.guess ?? json({
-    verdict: "correct", resolved: { id: "x", name: "The answer" }, resolvedBy: "gemini", km: 0, feedback: "Spot on.",
-    output: { resolvedId: "x", interpretation: "the answer", feedback: "Spot on." }, meta: { ...META, feature: "Guess Boston · answer judge" },
-  }));
   await page.route("**/api/game/hint", over.hint ?? json({ hint: "It overlooks the oldest public park in America.", angle: "geography", source: "gemini", output: {}, meta: META }));
-  await page.route("**/api/game/debrief", over.debrief ?? json({
-    debrief: { tells: "MOCK TELLS", history: "MOCK HISTORY", transit: "MOCK TRANSIT", coaching: "MOCK COACHING", nextPlaceId: "faneuil-hall", nextReason: "A market hall next." },
-    next: { placeId: "faneuil-hall", reason: "A market hall next.", tier: 2, chosenBy: "gemini" },
-    meta: { ...META, feature: "Guess Boston · debrief + next round" },
+  await page.route("**/api/game/draw", over.draw ?? json({
+    score: 82, recognizableFeatures: ["a round dome"], missingFeatures: ["the columns"], feedback: "MOCK FEEDBACK", source: "gemini", meta: { ...META, feature: "Bostie Drawing · sketch judge" },
   }));
 }
 
@@ -86,6 +82,15 @@ async function dismissRewards(page: Page) {
     await page.waitForTimeout(350);
   }
   return seen;
+}
+
+/** The right answer to the question on screen, looked up from the game's own data. */
+async function answer(page: Page, correctly: boolean, group = page.getByRole("group", { name: "Answers" })): Promise<string> {
+  const id = (await group.getAttribute("data-qid"))!;
+  const right = id.startsWith("fig-") ? FIGURES.find((f) => `fig-${f.id}` === id)!.answer : PLACE[id].name;
+  if (correctly) await group.getByRole("button", { name: right, exact: true }).click();
+  else await group.getByRole("button").filter({ hasNotText: right }).first().click();
+  return right;
 }
 
 const tipDialog = (page: Page) => page.getByRole("dialog", { name: "Tip" });
@@ -184,9 +189,9 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
   await shot(page, "04-waiting");
 
-  // Guess Boston while waiting
-  await expect(page.getByRole("region", { name: "Play while you wait" }).getByRole("link")).toHaveCount(5); // every game, with a picture
-  await page.getByRole("main").getByRole("link", { name: /Classic/ }).click();
+  // Bostie's Favourite while waiting
+  await expect(page.getByRole("region", { name: "Play while you wait" }).getByRole("link")).toHaveCount(3); // the three games, each with a picture
+  await page.getByRole("main").getByRole("link", { name: /Bostie Guessing/ }).click();
   await readTips();
   await page.getByRole("button", { name: control("play") }).click();
   await expect(tipDialog(page).getByRole("heading", { name: TOUR["play-round"][0].title })).toBeVisible();
@@ -196,16 +201,26 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await shot(page, "05b-tip-round");
   tips.push(TOUR["play-round"][0].title);
   await readTips();
-  await expect(page.getByRole("heading", { name: /^(What|Where) is this\?$/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /is this\?$/ })).toBeVisible();
   await shot(page, "05-round");
-  await page.getByLabel("Your guess").fill("that gold dome building by the common");
-  await page.getByRole("button", { name: "Submit guess" }).click();
+  for (let n = 0; n < 5; n++) {
+    await answer(page, true);
+    await expect(page.getByTestId("bostie")).toHaveAttribute("data-mood", "cheer"); // Bostie reacts to the answer
+    await page.getByRole("button", { name: n < 4 ? "Next question" : "See results" }).click();
+  }
   expect(await dismissRewards(page)).toContain("Sharp Eye");
   await readTips();
-  await expect(page.getByText("MOCK COACHING")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "5 of 5 correct" })).toBeVisible();
   await expect(page.getByText("points", { exact: true })).toBeVisible();
   await shot(page, "06-round-result");
-  expect((await store(page)).events.filter((e: { t: string }) => e.t === "round")).toHaveLength(1);
+  expect((await store(page)).events.filter((e: { t: string }) => e.t === "play")).toMatchObject([{ game: "guess", score: 5, won: true, paid: true }]);
+  // The hub and the other two games each introduce themselves.
+  for (const [path, heading] of [["/play", "Bostie's Favourite"], ["/play/draw", "How to play"], ["/play/parkour", "How to play"]]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await readTips();
+  }
+  await shot(page, "06b-parkour-intro");
 
   // Ride four stops, collecting a stamp at each station
   await page.goto("/journey");
@@ -261,7 +276,7 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   ]));
   expect(s.events.filter((e: { t: string }) => e.t === "journey")).toHaveLength(1);
   expect(await xpTotal(page)).toBeGreaterThanOrEqual(5 * 40 + 150 + 100 + 50 + 50 + 100);
-  expect(s.ai.length).toBeGreaterThanOrEqual(3); // judge, debrief, recognition were all logged
+  expect(s.ai.length).toBeGreaterThanOrEqual(1); // the landmark recognition was logged
   await noSidewaysScroll(page);
   await page.getByRole("tab", { name: "Landmarks" }).click();
   await shot(page, "14-passport-landmarks");
@@ -322,51 +337,197 @@ test("an uncertain or failed scan awards nothing and offers a retry", async ({ p
   expect(await xpTotal(page)).toBe(0);
 });
 
-test("Guess Boston: hints, wrong guesses, reveal, and Gemini being down", async ({ page }) => {
-  await mockApis(page, {
-    guess: (route) => route.fulfill({ json: { verdict: "close", resolved: { id: "park-street-church", name: "Park Street Church" }, resolvedBy: "gemini", km: 0.3, feedback: "Right part of town.", output: {}, meta: META } }),
-    debrief: (route) => route.fulfill({ status: 500, json: { error: "internal" } }),
-  });
+test("Bostie Guessing: a hint, a wrong pick, a pin, Gemini being down, and playing again", async ({ page }) => {
+  await mockApis(page, { hint: (route) => route.fulfill({ status: 500, json: { error: "internal" } }) });
   await seed(page);
-  await page.goto("/play");
-  await page.getByRole("radio", { name: /Landmarks/ }).click();
+  await page.goto("/play/guess");
+  await expect(page.getByTestId("xp-note")).toContainText("5 paid plays left today");
   await page.getByRole("button", { name: "Start round" }).click();
+  const answers = page.getByRole("group", { name: "Answers" });
 
-  await page.getByRole("button", { name: /Hint \(3 left\)/ }).click();
-  await expect(page.getByText("It overlooks the oldest public park in America.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Hint \(2 left\)/ })).toBeVisible();
+  // 1: a hint removes two wrong answers and still works when Gemini is down.
+  await page.getByRole("button", { name: /Hint/ }).click();
+  await expect(page.getByText("From Bostie's notes")).toBeVisible();
+  await expect(answers.getByRole("button", { disabled: true })).toHaveCount(2);
+  await answer(page, true);
+  await expect(page.getByTestId("answer-note")).toContainText("Correct, +50 points");
+  await page.getByRole("button", { name: "Next question" }).click();
 
-  for (let i = 0; i < 3; i++) {
-    await page.getByLabel("Your guess").fill(`wrong guess ${i}`);
-    await page.getByRole("button", { name: "Submit guess" }).click();
-    if (i < 2) await expect(page.getByText("Understood as Park Street Church")).toHaveCount(i + 1);
+  // 2: one try only. A wrong pick shows the right answer and locks the buttons.
+  const right = await answer(page, false);
+  await expect(page.getByTestId("answer-note")).toContainText(`It was ${right}`);
+  await expect(page.getByTestId("bostie")).toHaveAttribute("data-mood", "oops");
+  await expect(answers.getByRole("button", { disabled: true })).toHaveCount(4);
+  await shot(page, "14-guess-wrong");
+  await page.getByRole("button", { name: "Next question" }).click();
+
+  // 3: answer on the map instead.
+  await page.getByRole("button", { name: "Pin it instead" }).click();
+  await expect(page.getByRole("button", { name: "Tap the map first" })).toBeDisabled();
+  await page.getByRole("group", { name: "Map of Boston and the MBTA network" }).click({ position: { x: 120, y: 120 } });
+  await page.getByRole("button", { name: "Lock in this pin" }).click();
+  await expect(page.getByTestId("answer-note")).toContainText("from the spot");
+  await shot(page, "15-pin-result");
+  await page.getByRole("button", { name: "Next question" }).click();
+
+  for (const label of ["Next question", "See results"]) {
+    await answer(page, false);
+    await page.getByRole("button", { name: label }).click();
   }
   await dismissRewards(page);
-  await expect(page.getByText("Not this time. It was")).toBeVisible();
-  await expect(page.getByText("Gemini is unreachable, so this is Bostie's reference note.")).toBeVisible();
-  const round = (await store(page)).events[0];
-  expect(round).toMatchObject({ t: "round", correct: false, score: 0, hints: 1 });
-  expect(await xpTotal(page)).toBe(5); // participation XP only
-  await page.getByRole("button", { name: "Next round" }).click(); // falls back to a random pick
-  await expect(page.getByRole("heading", { name: /^(What|Where) is this\?$/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^[12] of 5 correct$/ })).toBeVisible();
+  await expect(page.getByTestId("bostie")).toHaveAttribute("data-mood", "lose");
+  const play = (await store(page)).events[0];
+  expect(play).toMatchObject({ t: "play", game: "guess", won: false, hints: 1, paid: true });
+  expect(await xpTotal(page)).toBe(5 * play.score);
+
+  await page.getByRole("button", { name: "Play again" }).click();
+  await expect(page.getByText("1 of 5", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Quit" }).click(); // leaving mid-round goes back to the instructions
+  await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible();
 });
 
-test("pin drop mode scores by distance on the map", async ({ page }) => {
+test("the daily XP limit: the sixth play of a game says it earns nothing", async ({ page }) => {
+  const now = Date.now();
+  await mockApis(page);
+  await seed(page, { events: Array.from({ length: 5 }, (_, n) => ({ t: "play", id: `guess-${n}`, game: "guess", score: 5, won: true, hints: 0, paid: true, at: now - n * 1000 })) });
+  await page.goto("/play/guess");
+  await expect(page.getByTestId("xp-note")).toContainText("No XP: daily limit reached");
+  await page.goto("/play/draw");
+  await expect(page.getByTestId("xp-note")).toContainText("5 paid plays left today"); // the limit is per game
+  await page.goto("/play/guess");
+  await page.getByRole("button", { name: "Start round" }).click();
+  for (const label of ["Next question", "Next question", "Next question", "Next question", "See results"]) {
+    await answer(page, true);
+    await page.getByRole("button", { name: label }).click();
+  }
+  await dismissRewards(page);
+  await expect(page.getByText("No XP: daily limit reached.")).toBeVisible();
+  expect((await store(page)).events.at(-1)).toMatchObject({ game: "guess", score: 5, paid: false });
+});
+
+test("Bostie Drawing: tools, an empty canvas, Gemini failing, then a scored result", async ({ page }) => {
+  let calls = 0;
+  await mockApis(page, {
+    draw: (route) => (++calls === 1
+      ? route.fulfill({ status: 502, json: { error: "judge_unavailable", message: "Bostie could not look at your drawing just now." } })
+      : route.fulfill({ json: { score: 182, recognizableFeatures: ["a round dome"], missingFeatures: ["the columns"], feedback: "MOCK FEEDBACK", source: "gemini", meta: META } })),
+  });
+  await seed(page);
+  await page.goto("/play/draw");
+  await page.getByRole("button", { name: "Start drawing" }).click();
+  const canvas = page.locator("canvas");
+  const submit = page.getByRole("button", { name: /Submit drawing|Try again/ });
+
+  await submit.click();
+  await expect(page.getByRole("alert").filter({ hasText: "Draw something first" })).toBeVisible();
+  expect(calls).toBe(0); // an empty canvas is never sent
+
+  const box = (await canvas.boundingBox())!;
+  const stroke = async (from: [number, number], to: [number, number]) => {
+    await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 8 });
+    await page.mouse.up();
+  };
+  const ink = () => canvas.evaluate((c: HTMLCanvasElement) => c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data.reduce((n, v, i) => n + (i % 4 === 1 && v < 200 ? 1 : 0), 0));
+  await canvas.scrollIntoViewIfNeeded();
+  await stroke([0.2, 0.7], [0.8, 0.7]);
+  await page.getByRole("radio", { name: "Colour #da291c" }).click();
+  await page.getByLabel("Brush size").fill("20");
+  await stroke([0.5, 0.2], [0.5, 0.7]);
+  const two = await ink();
+  expect(two).toBeGreaterThan(500);
+  await page.getByRole("button", { name: "Undo" }).click();
+  expect(await ink()).toBeLessThan(two);
+  await page.getByRole("button", { name: "Redo" }).click();
+  expect(await ink()).toBe(two);
+  await page.getByRole("button", { name: "Eraser" }).click();
+  await stroke([0.2, 0.7], [0.8, 0.7]);
+  expect(await ink()).toBeLessThan(two);
+  await page.getByRole("button", { name: "Clear canvas" }).click();
+  expect(await ink()).toBe(0);
+  await submit.click();
+  await expect(page.getByRole("alert").filter({ hasText: "Draw something first" })).toBeVisible(); // erased and cleared drawings count as empty
+
+  await page.getByRole("button", { name: "Pen" }).click();
+  await stroke([0.2, 0.3], [0.8, 0.8]);
+  await shot(page, "26-drawing");
+  await submit.click();
+  await expect(page.getByRole("alert").filter({ hasText: "could not look at your drawing" })).toBeVisible(); // Gemini down: the drawing stays
+  expect(await ink()).toBeGreaterThan(100);
+  await page.getByRole("button", { name: "Try again" }).click();
+
+  await dismissRewards(page);
+  await expect(page.getByTestId("draw-score")).toHaveText("100%"); // the model said 182: clamped
+  await expect(page.getByText("MOCK FEEDBACK")).toBeVisible();
+  await expect(page.getByRole("img", { name: /^Your drawing of/ })).toBeVisible();
+  await expect(page.getByText("Bostie spotted: a round dome.")).toBeVisible();
+  await shot(page, "27-drawing-result");
+  const state = await store(page);
+  expect(state.events[0]).toMatchObject({ t: "play", game: "draw", score: 100, won: true, paid: true });
+  expect(await xpTotal(page)).toBe(40);
+  expect(JSON.stringify(state)).not.toContain("data:image"); // the drawing is never stored
+
+  await page.getByRole("button", { name: "Next drawing" }).click();
+  await expect(canvas).toBeVisible();
+  expect(await ink()).toBe(0);
+  await page.getByRole("button", { name: "Quit" }).click();
+  await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible();
+});
+
+test("Bostie Parkour: clear every obstacle, crash on a wrong answer, and run out of time at six seconds", async ({ page }) => {
+  test.setTimeout(150_000);
   await mockApis(page);
   await seed(page);
-  await page.goto("/play");
-  await page.getByRole("radio", { name: /Pin Drop/ }).click();
-  await page.getByRole("button", { name: "Start round" }).click();
-  await expect(page.getByRole("button", { name: "Tap the map first" })).toBeDisabled();
-  const map = page.getByRole("group", { name: "Map of Boston and the MBTA network" });
-  await map.click({ position: { x: 120, y: 120 } }); // scrolls the map into view first
-  await page.getByRole("button", { name: "Lock in this pin" }).click();
+  await page.goto("/play/parkour");
+  await expect(page.getByRole("radiogroup", { name: "Difficulty" }).getByRole("radio")).toHaveText([/Easy.*3 obstacles/, /Medium.*5 obstacles/, /Hard.*7 obstacles/, /Impossible.*10 obstacles/]);
+  const question = page.getByRole("group", { name: "Question" });
+  const end = page.getByTestId("parkour-end");
+
+  // Easy: three right answers finish the run.
+  await page.getByRole("button", { name: "Start run" }).click();
+  for (let n = 0; n < 3; n++) {
+    await expect(question).toBeVisible({ timeout: 20_000 });
+    if (n === 0) await shot(page, "28-parkour-question");
+    await answer(page, true, question);
+    await expect(question).toBeHidden(); // the buttons go at once: no second answer
+  }
+  await expect(end).toHaveAttribute("data-won", "true", { timeout: 20_000 });
   await dismissRewards(page);
-  await expect(page.getByText("points", { exact: true })).toBeVisible();
-  const round = (await store(page)).events[0];
-  expect(round.t).toBe("round");
-  expect(round.score).toBeGreaterThanOrEqual(0);
-  await shot(page, "15-pin-result");
+  await expect(end).toContainText("3/3");
+  await shot(page, "29-parkour-win");
+  expect((await store(page)).events[0]).toMatchObject({ t: "play", game: "parkour", score: 3, won: true, level: 0 });
+  expect(await xpTotal(page)).toBe(15);
+
+  // A wrong answer ends the run.
+  await page.getByRole("button", { name: "Run again" }).click();
+  await expect(question).toBeVisible({ timeout: 20_000 });
+  await answer(page, false, question);
+  await expect(end).toHaveAttribute("data-won", "false", { timeout: 20_000 });
+  await expect(end).toContainText("0/3");
+  expect(await xpTotal(page)).toBe(20);
+
+  // No answer: the question stays for six seconds, the world keeps moving, then Bostie crashes.
+  await page.getByRole("radio", { name: /Medium/ }).click();
+  await page.getByRole("button", { name: "Run again" }).click();
+  await expect(question).toBeVisible({ timeout: 20_000 });
+  const shown = Date.now();
+  await expect(page.getByTestId("parkour-clock")).toHaveText(/^[3-6]$/);
+  await page.waitForTimeout(4000);
+  await expect(question).toBeVisible(); // still answerable after four seconds
+  await expect(question).toBeHidden({ timeout: 6000 });
+  const lasted = Date.now() - shown;
+  expect(lasted).toBeGreaterThan(5000); // measured from when the test first saw it, a moment after it opened
+  expect(lasted).toBeLessThan(7500);
+  await expect(end).toHaveAttribute("data-won", "false", { timeout: 20_000 });
+  await expect(end).toContainText("0/5");
+
+  // Quitting mid-run goes back to the instructions and frees the scene.
+  await page.getByRole("button", { name: "Run again" }).click();
+  await expect(page.getByTestId("parkour-run")).toBeVisible();
+  await page.getByRole("button", { name: "Quit" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Difficulty" })).toBeVisible();
 });
 
 test("live transit: real predictions are labelled live, failures degrade honestly, transfers are explained", async ({ page }) => {
