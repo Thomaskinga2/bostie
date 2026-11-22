@@ -1,7 +1,7 @@
 "use client";
 // One trip: the map on top, the day's stops underneath in visiting order, and how to get
 // between them. Stops can be dragged, optimized, added and removed; the map follows.
-import { ChevronLeft, Clock, Footprints, GripVertical, Plus, Search, Trash2, TrainFront, Wand2 } from "lucide-react";
+import { ChevronLeft, Clock, ExternalLink, Footprints, GripVertical, Plus, Search, Trash2, TrainFront, Wand2 } from "lucide-react";
 import { AnimatePresence, Reorder, useDragControls } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -26,13 +26,16 @@ const CityMap = dynamic(() => import("@/components/map/CityMap").then((m) => m.C
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** How to get to a stop from the one before: a walk, or a ride that can be started as a guided journey. */
-function LegRow({ t, onRide }: { t: Timed; onRide: () => void }) {
+function LegRow({ t, onRide, onWalk }: { t: Timed; onRide: () => void; onWalk: () => void }) {
   const { leg } = t;
   return (
     <div className="flex items-center gap-2.5 py-1.5 pl-[18px] text-[13px] text-ink-soft" data-testid="trip-leg">
       <span aria-hidden className="h-7 w-0.5 rounded bg-line" />
       {leg.mode === "walk" ? (
-        <span className="flex items-center gap-1.5"><Footprints size={15} aria-hidden /> {leg.minutes} min walk ({formatDistance(leg.km)})</span>
+        <>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5"><Footprints size={15} className="shrink-0" aria-hidden /> {leg.minutes} min walk ({formatDistance(leg.km)})</span>
+          <button onClick={onWalk} aria-label={`Walk it: the way to ${t.stop.name}`} className="h-8 shrink-0 rounded-full bg-forest px-3 text-[12.5px] font-bold text-paper">Walk it</button>
+        </>
       ) : (
         <>
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -40,7 +43,7 @@ function LegRow({ t, onRide }: { t: Timed; onRide: () => void }) {
             <span className="min-w-0 leading-snug">{leg.summary}</span>
           </span>
           <span className="shrink-0 font-semibold tabular-nums text-ink">{leg.minutes} min, {formatFare(leg.fareCents)}</span>
-          <button onClick={onRide} className="h-8 shrink-0 rounded-full bg-forest px-3 text-[12.5px] font-bold text-paper">Ride it</button>
+          <button onClick={onRide} aria-label={`Ride it: the way to ${t.stop.name}`} className="h-8 shrink-0 rounded-full bg-forest px-3 text-[12.5px] font-bold text-paper">Ride it</button>
         </>
       )}
     </div>
@@ -51,12 +54,12 @@ function LegRow({ t, onRide }: { t: Timed; onRide: () => void }) {
  * One stop in the list, with the way to reach it above. The whole unit drags by its handle.
  * Switching it off keeps it in the list but leaves it out of the day.
  */
-function StopCard({ stop, t, n, selected, onOpen, onRide, onToggle }: { stop: Stop; t?: Timed; n: number | null; selected: boolean; onOpen: () => void; onRide: () => void; onToggle: () => void }) {
+function StopCard({ stop, t, n, selected, onOpen, onRide, onWalk, onToggle }: { stop: Stop; t?: Timed; n: number | null; selected: boolean; onOpen: () => void; onRide: () => void; onWalk: () => void; onToggle: () => void }) {
   const drag = useDragControls();
   const on = !stop.skipped;
   return (
     <Reorder.Item value={stop} layout="position" dragListener={false} dragControls={drag} id={`stop-${stop.key}`} data-testid="trip-stop" className="relative" whileDrag={{ scale: 1.02, zIndex: 5 }}>
-      {t && <LegRow t={t} onRide={onRide} />}
+      {t && <LegRow t={t} onRide={onRide} onWalk={onWalk} />}
       <div className={cx("mt-1.5 flex items-stretch overflow-hidden rounded-2xl border bg-card", selected ? "border-forest shadow-card ring-1 ring-forest" : "border-line", !on && "opacity-60")}>
         <button onClick={onOpen} aria-label={n ? `${n}. ${stop.name}` : `Skipped: ${stop.name}`} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left">
           <span className="relative shrink-0">
@@ -86,6 +89,54 @@ function StopCard({ stop, t, n, selected, onOpen, onRide, onToggle }: { stop: St
         </span>
       </div>
     </Reorder.Item>
+  );
+}
+
+type Point = { name: string; lat: number; lng: number };
+
+/**
+ * The way to a stop on foot: where you set off from, where you are going, how far, and a
+ * link to street-by-street directions. Bostie knows the distance, not the streets, so the
+ * line on its map is the direct one and it says so.
+ */
+function WalkSheet({ walk, onClose }: { walk: { from: Point; to: Stop; minutes: number; km: number } | null; onClose: () => void }) {
+  const here = useStore((s) => s.geo);
+  const view = useMemo(() => {
+    if (!walk) return null;
+    const a = { lat: walk.from.lat, lng: walk.from.lng };
+    const b = { lat: walk.to.lat, lng: walk.to.lng };
+    const markers: MapMarker[] = [
+      { id: "from", kind: "pin", label: walk.from.name, ...a },
+      { id: "to", kind: "answer", label: walk.to.name, ...b },
+      ...(here ? [{ id: "user", kind: "user" as const, label: "You", lat: here.lat, lng: here.lng }] : []),
+    ];
+    return { markers, lines: [{ id: "walk", color: "#1f4b3a", dashed: true, emphasis: true, path: [a, b] }] as MapLine[], fit: [a, b] };
+  }, [walk, here]);
+  return (
+    <Sheet open={!!walk} onClose={onClose} title={walk ? `Walk to ${walk.to.name}` : undefined} tall>
+      {walk && view && (
+        <div data-testid="trip-walk">
+          <p className="text-[15.5px] leading-snug">
+            <strong>{walk.minutes} min on foot</strong> ({formatDistance(walk.km)}) from {walk.from.name}.
+          </p>
+          <p className="text-[14px] text-ink-soft">{walk.to.address}</p>
+          <div className="relative mt-3 h-[250px] overflow-hidden rounded-3xl border border-line">
+            <CityMap className="size-full" markers={view.markers} lines={view.lines} fit={view.fit} selectedId="to" />
+          </div>
+          <p className="mt-2 text-[12.5px] leading-snug text-ink-faint">
+            The dashed line is the direct way between the two places. Time and distance are estimates; follow the streets with the link below.
+          </p>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&origin=${walk.from.lat},${walk.from.lng}&destination=${walk.to.lat},${walk.to.lng}&travelmode=walking`}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-forest text-[15.5px] font-bold text-paper"
+          >
+            Street-by-street in Google Maps <ExternalLink size={16} aria-hidden />
+          </a>
+        </div>
+      )}
+    </Sheet>
   );
 }
 
@@ -159,6 +210,7 @@ export default function TripPlanPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [walk, setWalk] = useState<{ from: Point; to: Stop; minutes: number; km: number } | null>(null);
   const list = useRef<HTMLDivElement>(null);
 
   const weekday = new Date(now).getDay();
@@ -287,8 +339,10 @@ export default function TripPlanPage() {
                   // Times, travel and numbers come from the stops that are switched on, in their current order.
                   const at = timed.findIndex((t) => t.stop.key === stop.key);
                   const t = timed[at];
+                  // Where this leg sets off from: the stop before, or the day's starting station.
+                  const origin: Point = at > 0 ? timed[at - 1].stop : STATION[trip.startStationId];
                   return (
-                    <StopCard key={stop.key} stop={stop} t={t} n={t ? at + 1 : null} selected={selected === stop.key} onOpen={() => (setSelected(stop.key), setDetail(stop.key))} onRide={() => t && ride(t)} onToggle={() => setStops(stops.map((x) => (x.key === stop.key ? { ...x, skipped: !x.skipped } : x)))} />
+                    <StopCard key={stop.key} stop={stop} t={t} n={t ? at + 1 : null} selected={selected === stop.key} onOpen={() => (setSelected(stop.key), setDetail(stop.key))} onRide={() => t && ride(t)} onWalk={() => t && (setSelected(stop.key), setWalk({ from: origin, to: stop, minutes: t.leg.minutes, km: t.leg.km }), emitTrip({ t: "leg-started", tripId: trip.id, placeId: stop.id }))} onToggle={() => setStops(stops.map((x) => (x.key === stop.key ? { ...x, skipped: !x.skipped } : x)))} />
                   );
                 })}
               </Reorder.Group>
@@ -301,6 +355,7 @@ export default function TripPlanPage() {
         )}
       </div>
 
+      <WalkSheet walk={walk} onClose={() => setWalk(null)} />
       <AddPlace open={adding} onClose={() => setAdding(false)} onAdd={(p) => (setStops([...stops, asStop({ ...p, why: null, minutes: 45 })]), emitTrip({ t: "stop-added", tripId: trip.id, placeId: p.id }))} />
 
       <Sheet open={!!open} onClose={() => setDetail(null)} title={open?.stop.name} tall>

@@ -1604,7 +1604,7 @@ test("Trips planned by Gemini: only verified places, in a sensible order, and a 
   expect((await store(page)).ai[0].meta.feature).toBe("Trips · itinerary generator");
 
   // The T leg becomes a normal guided journey to that stop.
-  await page.getByTestId("trip-leg").filter({ hasText: "Ride it" }).first().getByRole("button", { name: "Ride it" }).click();
+  await page.getByTestId("trip-leg").filter({ hasText: "Ride it" }).first().getByRole("button", { name: /^Ride it/ }).click();
   await expect(page).toHaveURL(/\/journey$/);
   await expect(page.getByRole("heading", { name: /to MOCK/ })).toBeVisible();
 });
@@ -1678,6 +1678,18 @@ test("Trips: skip a stop with its switch, drag stops by hand, and the day recalc
   const before = await summary.innerText();
   const mfaArrival = await card(page, "MOCK MFA").innerText();
 
+  // Every leg has a button that shows the way. A walk opens a map of it with a link to street directions.
+  await expect(legs.getByRole("button", { name: /^(Ride|Walk) it/ })).toHaveCount(3);
+  await page.getByRole("button", { name: "Walk it: the way to MOCK MFA" }).click();
+  const walk = page.getByTestId("trip-walk");
+  await expect(page.getByRole("dialog", { name: "Walk to MOCK MFA" })).toBeVisible();
+  await expect(walk).toContainText(/\d+ min on foot \(.+\) from MOCK Fenway Park/);
+  await expect(walk.getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
+  await expect(walk.getByRole("link", { name: /Street-by-street in Google Maps/ })).toHaveAttribute("href", /origin=42\.3467,-71\.0972&destination=42\.3394,-71\.094&travelmode=walking/);
+  await page.waitForTimeout(500);
+  await shot(page, "37-trip-walk");
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+
   // Switch the middle stop off: it stays in the list, greyed, and the day is worked out again without it.
   await page.getByRole("switch", { name: "Include MOCK Fenway Park in the day" }).click();
   await expect(summary).toContainText("2 stops");
@@ -1710,4 +1722,40 @@ test("Trips: skip a stop with its switch, drag stops by hand, and the day recalc
   await expect(legs.nth(2)).toContainText(/Harvard/);
   expect(await summary.innerText()).not.toBe(before);
   expect((await tripsStore(page)).trips[0].days[0].map((x: { name: string }) => x.name)).toEqual(["MOCK Fenway Park", "MOCK MFA", "MOCK Harvard Art Museums"]);
+});
+
+test("the walking parts of a journey have a Directions button that leads to the place", async ({ page }) => {
+  await mockApis(page);
+  await seed(page, { demo: false });
+  await page.goto("/ride");
+  await page.getByRole("combobox", { name: "Where to?" }).fill("museum");
+  await page.getByRole("listbox", { name: "Where to? results" }).getByRole("button", { name: /Go to Museum of Fine Arts, 465 Huntington Avenue/ }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.getByTestId("walk-directions")).toHaveCount(0); // nothing to walk to while planning
+  await page.getByRole("button", { name: "Start journey" }).click();
+
+  // Walking to the first station: directions to that station, from wherever the rider is.
+  await expect(page.getByRole("heading", { name: "Walk to Harvard" })).toBeVisible();
+  await expect(page.getByText("Tap Directions for the way there from where you are.")).toBeVisible(); // location unknown: no pretending to be there
+  const directions = page.getByRole("link", { name: "Directions to Harvard" });
+  await expect(directions).toHaveAttribute("href", "https://www.google.com/maps/dir/?api=1&destination=42.373362,-71.118956&travelmode=walking");
+  await expect(directions).toHaveAttribute("target", "_blank");
+  await page.waitForTimeout(400);
+  await shot(page, "38-journey-directions");
+
+  // On the train there is nowhere to walk, so no button.
+  await page.getByRole("button", { name: /I am at the station/ }).click();
+  await expect(page.getByTestId("walk-directions")).toHaveCount(0);
+
+  // At the far end the button leads to the place itself.
+  const state = await store(page);
+  const last = state.journey.plan.legs.length - 1;
+  await page.evaluate(([leg, stop]) => {
+    const raw = JSON.parse(localStorage.getItem("tquest-v1")!);
+    Object.assign(raw.state.journey, { stage: "exploring", leg, stop });
+    localStorage.setItem("tquest-v1", JSON.stringify(raw));
+  }, [last, state.journey.plan.legs[last].stops.length - 1]);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Walk to Museum of Fine Arts" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Directions to Museum of Fine Arts" })).toHaveAttribute("href", /destination=42\.3394573,-71\.093897&travelmode=walking/);
 });

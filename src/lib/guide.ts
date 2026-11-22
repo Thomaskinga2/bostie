@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 23;
+export const GUIDE_VERSION = 24;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -65,7 +65,7 @@ export const TOUR: Record<Scene, Spot[]> = {
   ],
   "journey-walk": [
     { target: "tracking-status", title: "How Bostie is following you", body: "Shows Automatic or Manual, and switches with one tap. If there is no GPS signal, confirm the step yourself." },
-    { target: "journey-map", title: "Your navigation map", body: "The route, the stations ahead and where you are. In Automatic mode the blue dot follows you." },
+    { target: "journey-map", title: "Your navigation map", body: "The route, the stations ahead and where you are. In Automatic mode the blue dot follows you. “Directions” opens the walk to the station in Google Maps." },
     { target: "journey-action", title: "Tell Bostie you are there", body: "In Manual mode, tap “I am at the station” when you reach it. In Automatic mode this happens by itself." },
   ],
   "journey-wait": [
@@ -145,7 +145,7 @@ export const TOUR: Record<Scene, Spot[]> = {
   "trip-plan": [
     { target: "trip-map", title: "The day on the map", body: "Your stops in order, with the T lines and walks between them. Tap a pin to find its card." },
     { target: "trip-tools", title: "Optimize and add", body: "“Optimize” puts the stops in the shortest order. “Add” searches for any place in Greater Boston." },
-    { target: "trip-list", title: "Your itinerary", body: "Drag the handle to reorder, or switch a stop off to skip it. Times, travel and fares update by themselves. “Ride it” starts a guided journey to a stop." },
+    { target: "trip-list", title: "Your itinerary", body: "Drag the handle to reorder, or switch a stop off to skip it. Times, travel and fares update by themselves. “Ride it” or “Walk it” shows the way to a stop." },
   ],
 
   // --- Scan ----------------------------------------------------------------------------

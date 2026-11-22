@@ -76,14 +76,20 @@ export async function POST(req: Request) {
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });
-    if (!res.ok) throw new Error(`Google Routes ${res.status}`);
+    if (!res.ok) {
+      // Google says why in the body (API not enabled, key restricted, billing…). Keep it for the server log.
+      const why = ((await res.json().catch(() => null)) as { error?: { message?: string; status?: string } } | null)?.error;
+      throw new Error(`Google Routes ${res.status} ${why?.status ?? ""}: ${(why?.message ?? "").slice(0, 300)}`);
+    }
     const data = (await res.json()) as GResponse;
     const out: TransitRoutesResponse = { provider: "google", routes: (data.routes ?? []).map(simplify).filter((r) => r.steps.some((s) => s.kind === "transit")) };
     cache.set(id, { at: Date.now(), body: out });
     if (cache.size > 500) cache.clear();
     return Response.json(out);
-  } catch {
-    // Not enabled on the key, over quota or down: alternatives are a bonus, so say nothing and return none.
+  } catch (e) {
+    // Not enabled on the key, over quota or down: alternatives are a bonus, so the rider sees nothing.
+    // The reason goes to the server log only (it never contains the key).
+    console.warn(`[routes] ${(e as Error).message}`);
     return Response.json(none);
   }
 }

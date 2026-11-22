@@ -1,5 +1,5 @@
 "use client";
-import { BellRing, Bus, Camera, Check, ChevronLeft, CreditCard, ExternalLink, Footprints, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
+import { BellRing, Bus, Camera, Navigation, Check, ChevronLeft, CreditCard, ExternalLink, Footprints, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
 import type { MapLine, MapMarker } from "@/components/map/CityMap";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -479,6 +479,11 @@ export default function JourneyPage() {
   const earned = xp.filter((t) => t.at >= journey.startedAt);
   const earnedStamps = Object.entries(d.stamps).filter(([, at]) => at >= journey.startedAt);
 
+  /** Where the rider is walking to right now, if this stage is a walk: the first station, or the final place. */
+  const walkTarget = stage === "walking" ? { name: STATION[leg.from].name, lat: STATION[leg.from].lat, lng: STATION[leg.from].lng }
+    : (stage === "arriving" || stage === "exploring") && walkTo ? { name: walkTo.name, lat: walkTo.lat, lng: walkTo.lng }
+    : null;
+
   const quit = () => {
     end();
     router.push("/ride");
@@ -487,7 +492,7 @@ export default function JourneyPage() {
   // One headline, one sentence and one action per stage.
   const view: Record<Stage, { title: string; body: string; action: string }> = {
     planning: { title: `${walkFrom?.name ?? STATION[plan.from].name} to ${goal}`, body: `About ${plan.minutes} min on the train${plan.legs.length > 1 ? `, ${plan.legs.length - 1} change${plan.legs.length > 2 ? "s" : ""}` : ", no changes"}${walkTo ? `, then a ${walkTo.minutes} min walk from ${STATION[plan.to].name}` : ""}.`, action: "Start journey" },
-    walking: { title: `Walk to ${STATION[leg.from].name}`, body: walkKm !== null && walkKm > 0.05 ? `About ${walkMinutes(walkKm)} min on foot (${formatDistance(walkKm)})${walkFrom ? ` from ${walkFrom.name}` : ""}.` : "You are right by the station.", action: "I am at the station" },
+    walking: { title: `Walk to ${STATION[leg.from].name}`, body: walkKm === null ? "Tap Directions for the way there from where you are." : walkKm > 0.05 ? `About ${walkMinutes(walkKm)} min on foot (${formatDistance(walkKm)})${walkFrom ? ` from ${walkFrom.name}` : ""}.` : "You are right by the station.", action: "I am at the station" },
     waiting: { title: `Wait for the ${info.label}`, body: `${info.directionName} platform. Take any train toward ${info.toward}.`, action: "My train is here" },
     boarding: { title: "Step aboard", body: `Ride ${leg.stops.length - 1} stop${leg.stops.length > 2 ? "s" : ""} to ${STATION[leg.to].name}.`, action: "I am on board" },
     traveling: { title: `Next stop: ${STATION[nextStop]?.name}`, body: `About ${Math.max(1, Math.round(rideMinutes(leg.route, leg.stops[journey.stop - 1], nextStop)))} min. There is no GPS underground, so confirm each stop as the doors open.`, action: `Arrived at ${STATION[nextStop]?.name}` },
@@ -521,7 +526,23 @@ export default function JourneyPage() {
       {stage !== "planning" && stage !== "complete" && <JourneyMap journey={journey} />}
 
       <div className="px-5 pt-5">
-        <h1 className="text-[29px] font-bold leading-[1.08]">{v.title}</h1>
+        <div className="flex items-start gap-3">
+          <h1 className="min-w-0 flex-1 text-[29px] font-bold leading-[1.08]">{v.title}</h1>
+          {/* On the walking parts of a journey: street directions to where you are heading. */}
+          {walkTarget && (
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${walkTarget.lat},${walkTarget.lng}&travelmode=walking`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Directions to ${walkTarget.name}`}
+              data-testid="walk-directions"
+              className="mt-0.5 flex w-[72px] shrink-0 flex-col items-center gap-1 rounded-2xl bg-forest px-1 py-2 text-[11.5px] font-bold leading-tight text-paper"
+            >
+              <Navigation size={22} aria-hidden />
+              Directions
+            </a>
+          )}
+        </div>
         <p className="mt-2 text-[16px] leading-snug text-ink-soft">{v.body}</p>
       </div>
 
