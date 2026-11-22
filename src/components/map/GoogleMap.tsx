@@ -9,9 +9,9 @@ import { BOOKMARK_PATH, CARD, FOREST, GOLD, GOLD_SOFT, INK, PIN_PATH, USER_BLUE,
 // The Maps JS API ships no types and we avoid a dependency for one file: `G` is the google.maps namespace.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type G = any;
-type MapsWindow = Window & { google?: { maps: G }; gm_authFailure?: () => void; __tquestMapsReady?: () => void };
+type MapsWindow = Window & { google?: { maps: G }; gm_authFailure?: () => void; __bostieMapsReady?: () => void };
 
-const FAIL_EVENT = "tquest-maps-failed";
+const FAIL_EVENT = "bostie-maps-failed";
 let loading: Promise<G> | null = null;
 let failed = false;
 export const googleFailed = () => failed;
@@ -28,13 +28,13 @@ function loadMaps(key: string): Promise<G> {
       failed = true;
       window.dispatchEvent(new Event(FAIL_EVENT));
     };
-    w.__tquestMapsReady = () =>
+    w.__bostieMapsReady = () =>
       Promise.all([w.google!.maps.importLibrary("maps"), w.google!.maps.importLibrary("marker")]).then(
         () => resolve(w.google!.maps),
         () => fail("Google Maps libraries failed to load"),
       );
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=__tquestMapsReady`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=__bostieMapsReady`;
     script.async = true;
     script.onerror = () => fail("Google Maps script failed to load");
     document.head.appendChild(script);
