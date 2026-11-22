@@ -15,17 +15,19 @@ const ICONS: [RegExp, LucideIcon, string][] = [
   [/museum|landmark|historic|church|monument|library|hall/i, Landmark, "#1f4b3a"],
 ];
 
-export function PlacePhoto({ place, className }: { place: Pick<TripPlace, "name" | "lat" | "lng" | "photo" | "category">; className?: string }) {
+export function PlacePhoto({ place, className }: { place: Pick<TripPlace, "id" | "name" | "lat" | "lng" | "photo" | "category" | "provider">; className?: string }) {
   const [failed, setFailed] = useState(false);
-  if (place.photo && !failed) {
+  const known = cataloguePhoto(place);
+  // Bostie's own licensed photo first; then Google's, by reference or looked up from the place id.
+  const src = place.photo ? `/api/trips/photo?ref=${encodeURIComponent(place.photo)}` : place.provider === "google" ? `/api/trips/photo?id=${encodeURIComponent(place.id)}` : null;
+  if (!known && src && !failed) {
     return (
       <div className={cx("overflow-hidden bg-sand", className)}>
         {/* eslint-disable-next-line @next/next/no-img-element -- proxied Google place photo, already sized */}
-        <img src={`/api/trips/photo?ref=${encodeURIComponent(place.photo)}`} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} className="size-full object-cover" />
+        <img src={src} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} className="size-full object-cover" />
       </div>
     );
   }
-  const known = cataloguePhoto(place);
   if (known) return <Photo id={known} credit={false} className={className} />;
   const [, Icon, color] = ICONS.find(([re]) => re.test(`${place.category ?? ""} ${place.name}`)) ?? [null, MapPin, "#4d564f"];
   return (

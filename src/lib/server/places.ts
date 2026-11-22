@@ -126,12 +126,6 @@ export async function searchTripPlaces(q: string, limit = 5): Promise<{ provider
   });
   if (!res.ok) throw new Error(`Google Places ${res.status}`);
   const data = (await res.json()) as { places?: GPlace[] };
-  try { // TEMP
-    const id = data.places?.[0]?.id;
-    const d = await fetch(`https://places.googleapis.com/v1/places/${id}`, { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": "id,photos" }, cache: "no-store" });
-    const dj = (await d.json()) as { photos?: { name: string }[]; error?: { message?: string } };
-    console.log("[trips-debug] details:", d.status, "| photos:", dj.photos?.length ?? 0, "| first:", (dj.photos?.[0]?.name ?? "").slice(0, 60), "| err:", (dj.error?.message ?? "").slice(0, 200));
-  } catch (e) { console.log("[trips-debug] details threw", String(e).slice(0, 120)); }
   const places = (data.places ?? []).filter((p) => p.location && p.displayName?.text).map(toTripPlace).filter(inBox).slice(0, limit);
   return { provider: "google", places };
 }
