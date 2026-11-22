@@ -727,13 +727,13 @@ test("exploring without the demo still gets tips, minus the demo-only ones", asy
   await expect(tipDialog(page)).toBeVisible();
 });
 
-test("Explore Boston: interests and budget give real destinations, directions and saving, with no quest needed", async ({ page }) => {
+test("Explore Boston: interests give real destinations, directions and saving, with no quest needed", async ({ page }) => {
   await mockApis(page);
   await seed(page, { demo: false });
   await page.goto("/discover");
   await expect(page.getByRole("heading", { name: "Closest to you" })).toBeVisible();
 
-  // Interest + budget
+  // Interests
   await page.getByRole("button", { name: "Sports" }).click();
   await expect(page.getByRole("heading", { name: "Picked for you" })).toBeVisible();
   const first = page.locator('[data-tour="discover-results"] > li').first();
@@ -742,9 +742,7 @@ test("Explore Boston: interests and budget give real destinations, directions an
   await expect(first.getByText(/Matches your interest in sports/)).toBeVisible();
   await shot(page, "19-discover-picks");
 
-  await page.getByRole("radio", { name: "Free only" }).click();
-  await expect(page.getByRole("heading", { name: "Fenway Park" })).toHaveCount(0); // a paid tour is out of a free budget
-  await page.getByRole("radio", { name: "Any budget" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Budget" })).toHaveCount(0); // no budget filter: every place is offered
 
   // Save, details, directions
   await first.getByRole("button", { name: "Save Fenway Park" }).click();

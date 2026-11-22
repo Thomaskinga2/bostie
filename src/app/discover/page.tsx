@@ -9,18 +9,13 @@ import { Sheet } from "@/components/Sheet";
 import { StampArt } from "@/components/Stamp";
 import { StationSelect } from "@/components/StationSelect";
 import { Button, cx, Empty, LineDots, PageHeader, Photo } from "@/components/ui";
-import { COST_LABEL, INTERESTS, type Cost, type Interest } from "@/data/discover";
+import { COST_LABEL, INTERESTS, type Interest } from "@/data/discover";
 import { recommend, type Pick } from "@/lib/discover";
 import { formatFare } from "@/lib/fares";
 import { derive, STAMP } from "@/lib/gamification";
 import { nearestStation, STATION } from "@/lib/network";
 import { DEMO_ROUTE, useStore, useWhere } from "@/lib/store";
 
-const BUDGETS: { max: Cost; label: string }[] = [
-  { max: 0, label: "Free only" },
-  { max: 1, label: "Under $15" },
-  { max: 2, label: "Any budget" },
-];
 const chip = "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-[14px] font-semibold transition";
 
 function DestinationCard({ pick, saved, found, riding, onDirections, onSave, onOpen }: {
@@ -89,13 +84,12 @@ export default function DiscoverPage() {
 
   const [from, setFrom] = useState(() => (where.at ? nearestStation(where.at).station.id : demo ? DEMO_ROUTE.from : DEMO_ROUTE.to));
   const [interests, setInterests] = useState<Interest[]>([]);
-  const [budget, setBudget] = useState<Cost>(2);
   const [showAll, setShowAll] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
   const found = useMemo(() => derive(events).landmarks, [events]);
-  const picks = useMemo(() => recommend(from, interests, budget), [from, interests, budget]);
+  const picks = useMemo(() => recommend(from, interests, 2), [from, interests]);
   const shown = showAll ? picks : picks.slice(0, 4);
   const open = picks.find((p) => p.place.id === openId);
   const riding = !!journey && journey.stage !== "complete";
@@ -132,14 +126,6 @@ export default function DiscoverPage() {
           })}
         </div>
 
-        <h2 className="mt-5 text-[19px] font-bold">Budget</h2>
-        <div className="mt-2 flex rounded-full bg-sand p-1" role="radiogroup" aria-label="Budget">
-          {BUDGETS.map((b) => (
-            <button key={b.max} role="radio" aria-checked={budget === b.max} onClick={() => setBudget(b.max)} className={cx("h-10 flex-1 rounded-full text-[14px] font-semibold", budget === b.max ? "bg-card text-ink shadow-card" : "text-ink-soft")}>
-              {b.label}
-            </button>
-          ))}
-        </div>
       </section>
 
       <section className="mt-7 px-5" aria-labelledby="picks-h">
@@ -147,7 +133,7 @@ export default function DiscoverPage() {
           {interests.length ? "Picked for you" : "Closest to you"}
         </h2>
         <p className="mt-0.5 text-[13px] text-ink-soft">
-          Travel times are estimates from the route planner. Budget is a rough guide for one adult: check before you go.
+          Travel times are estimates from the route planner. The price on each card is a rough guide for one adult: check before you go.
         </p>
         {shown.length ? (
           <ul data-tour="discover-results" className="mt-3 space-y-4">
@@ -166,7 +152,7 @@ export default function DiscoverPage() {
           </ul>
         ) : (
           <div className="mt-3">
-            <Empty title="Nothing in that budget from here" body="Try a wider budget, or pick a different starting station." />
+            <Empty title="Nothing to show from here" body="Try other interests, or pick a different starting station." />
           </div>
         )}
         {!showAll && picks.length > shown.length && (
