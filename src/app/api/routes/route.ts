@@ -78,8 +78,10 @@ export async function POST(req: Request) {
     });
     if (!res.ok) {
       // Google says why in the body (API not enabled, key restricted, billing…). Keep it for the server log.
-      const why = ((await res.json().catch(() => null)) as { error?: { message?: string; status?: string } } | null)?.error;
-      throw new Error(`Google Routes ${res.status} ${why?.status ?? ""}: ${(why?.message ?? "").slice(0, 300)}`);
+      const why = ((await res.json().catch(() => null)) as { error?: { message?: string; status?: string; details?: { reason?: string; metadata?: { service?: string } }[] } } | null)?.error;
+      // `reason` tells the cases apart: SERVICE_DISABLED (API not enabled for the key's project) or API_KEY_SERVICE_BLOCKED (key restrictions).
+      const reason = why?.details?.map((d) => [d.reason, d.metadata?.service].filter(Boolean).join(" ")).filter(Boolean).join("; ");
+      throw new Error(`Google Routes ${res.status} ${why?.status ?? ""}: ${(why?.message ?? "").slice(0, 300)}${reason ? ` [${reason}]` : ""}`);
     }
     const data = (await res.json()) as GResponse;
     const out: TransitRoutesResponse = { provider: "google", routes: (data.routes ?? []).map(simplify).filter((r) => r.steps.some((s) => s.kind === "transit")) };
