@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { derive } from "./gamification";
 import { GUIDE_STEPS, type GuideStepId } from "./guide";
 import { useStore } from "./store";
+import { useTrips } from "./trips";
 
 export type DemoStep = { id: GuideStepId; title: string; detail: string; href: string; done: boolean };
 
@@ -15,6 +16,7 @@ export function useDemoSteps(): { steps: DemoStep[]; current: DemoStep | null } 
   const events = useStore((s) => s.events);
   const journey = useStore((s) => s.journey);
   const pathname = usePathname();
+  const planned = useTrips((s) => s.trips.length > 0);
   return useMemo(() => {
     const d = derive(events);
     const rode = d.stats.journeys > 0;
@@ -27,8 +29,9 @@ export function useDemoSteps(): { steps: DemoStep[]; current: DemoStep | null } 
       scan: d.stats.landmarks > 0,
       finish: rode,
       passport: rode && d.stats.landmarks > 0 && pathname === "/passport",
+      trips: planned,
     };
     const steps = GUIDE_STEPS.map((g) => ({ id: g.id, title: g.title, detail: g.hint, href: g.href, done: done[g.id] }));
     return { steps, current: steps.find((s) => !s.done) ?? null };
-  }, [events, journey, pathname]);
+  }, [events, journey, pathname, planned]);
 }

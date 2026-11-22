@@ -23,7 +23,7 @@ import { StampArt } from "@/components/Stamp";
 
 const STEP_NAMES = ["Plan", "Walk", "Wait", "Board", "Ride", "Arrive", "Explore", "Done"];
 /** Scenes that have on-screen tips (lib/guide.ts). */
-const SCENE: Partial<Record<Stage, string>> = { planning: "journey-plan", waiting: "journey-wait", traveling: "journey-ride", exploring: "journey-explore" };
+const SCENE: Partial<Record<Stage, string>> = { planning: "journey-plan", walking: "journey-walk", waiting: "journey-wait", traveling: "journey-ride", exploring: "journey-explore", complete: "journey-done" };
 const stepIndex = (s: Stage) => ({ planning: 0, walking: 1, waiting: 2, boarding: 3, traveling: 4, transferring: 4, arriving: 5, exploring: 6, complete: 7 })[s];
 
 /** MBTA-style strip map of one leg. `at` = index of the station the rider has reached. */
@@ -433,7 +433,7 @@ function TrackingStatus({ journey }: { journey: Journey }) {
       : stale ? "No GPS signal right now (common underground). Tap the button to confirm the step."
       : `Automatic: following your location${track.accuracyM ? `, accurate to about ${track.accuracyM} m` : ""}.`;
   return (
-    <div role="status" data-testid="tracking-status" className={cx("mx-5 mt-4 flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px]", auto && !stale ? "bg-moss text-forest-deep" : "bg-sand text-ink-soft")}>
+    <div role="status" data-testid="tracking-status" data-tour="tracking-status" className={cx("mx-5 mt-4 flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px]", auto && !stale ? "bg-moss text-forest-deep" : "bg-sand text-ink-soft")}>
       {auto ? <LocateFixed size={17} className="shrink-0" aria-hidden /> : <Hand size={17} className="shrink-0" aria-hidden />}
       <span className="min-w-0 flex-1 leading-snug">{text}</span>
       <button onClick={() => setTracking(auto ? "manual" : "auto")} className="shrink-0 font-semibold text-forest underline underline-offset-2">
@@ -534,11 +534,12 @@ export default function JourneyPage() {
             <p className="mt-3 text-[13px] text-ink-soft">
               Route computed from the MBTA station network. Ride times are estimates from distance, not live predictions.
             </p>
-            <FareSummary plan={plan} className="mt-4" />
+            {/* The next trains for this trip sit right under the steps, before fares and settings. */}
+            <StationSign id={plan.from} className="mt-4" />
+            <Arrivals stationId={plan.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
+            <FareSummary plan={plan} className="mt-5" />
             <TrackingChoice journey={journey} />
             <AlertChoice />
-            <StationSign id={plan.from} className="mt-5" />
-            <Arrivals stationId={plan.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
           </>
         )}
 
@@ -625,7 +626,7 @@ export default function JourneyPage() {
 
         {stage === "complete" && (
           <>
-            <dl className="grid grid-cols-3 divide-x divide-line rounded-2xl border border-line bg-card py-4 text-center">
+            <dl data-tour="journey-summary" className="grid grid-cols-3 divide-x divide-line rounded-2xl border border-line bg-card py-4 text-center">
               {[
                 [earned.reduce((s, t) => s + t.amount, 0), "XP earned"],
                 [plan.legs.reduce((n, l) => n + l.stops.length - 1, 0), "stops"],
@@ -651,7 +652,7 @@ export default function JourneyPage() {
       <div className="sticky bottom-0 z-10 mt-4 space-y-1 border-t border-line bg-paper px-5 pb-4 pt-3">
         {stage === "complete" ? (
           <>
-            <Button size="lg" className="w-full" onClick={() => router.push("/passport")}>{v.action}</Button>
+            <Button size="lg" className="w-full" onClick={() => router.push("/passport")} data-tour="journey-finish">{v.action}</Button>
             <Button variant="quiet" className="w-full" onClick={quit}>Plan another journey</Button>
           </>
         ) : (

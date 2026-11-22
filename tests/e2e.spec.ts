@@ -146,13 +146,20 @@ const upload = (page: Page) => page.locator('input[type="file"]').setInputFiles(
 
 test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) => {
   await mockApis(page);
+  // Demo mode is a setting (Passport, or the switch beside the phone frame), not a choice on the
+  // opening screen. This walkthrough starts with it already on.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("tquest-v1")) localStorage.setItem("tquest-v1", JSON.stringify({ state: { demo: true }, version: 0 }));
+  });
   await page.goto("/");
 
   // Welcome → guided demo
   await expect(page.getByRole("heading", { name: "Make every ride an adventure." })).toBeVisible();
   await page.waitForTimeout(2600); // the train rolls in and the note is pencilled
+  await expect(page.getByText("Boston", { exact: true })).toBeVisible(); // the platform sign
+  await expect(page.getByRole("button", { name: /guided demo/i })).toHaveCount(0);
   await shot(page, "01-welcome");
-  await page.getByRole("button", { name: "Judging? Take the guided demo" }).click();
+  await page.getByRole("button", { name: "Start exploring" }).click();
 
   // Train doors close over the screen and slide open onto the name step.
   await page.waitForTimeout(700);
@@ -202,6 +209,7 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await shot(page, "03b-fare");
   await expect(page.getByTestId("trip-breakdown").first().getByText("Red Line to Park Street")).toBeVisible(); // minutes for each part
   await page.getByRole("button", { name: control("begin", 0) }).click();
+  await readTips(); // the walk to the station
   // Once the journey starts, a navigation map shows the route and the rider.
   await expect(page.getByRole("region", { name: "Navigation map" }).getByRole("group", { name: "Map of Boston and the MBTA network" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Navigation map" }).getByText("Demo position")).toBeVisible();
@@ -240,13 +248,33 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   // Trips: the home screen, then a trip being planned.
   await page.goto("/trips");
   await readTips();
-  await page.getByRole("button", { name: /Build it myself/ }).click();
+  for (const way of ["From a video or screenshot", "Plan it for me"]) {
+    await page.getByRole("button", { name: way, exact: true }).click();
+    await readTips();
+    await page.getByRole("button", { name: "Close" }).click();
+  }
+  await page.getByRole("button", { name: control("trips"), exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Trip name" })).toBeVisible();
   await readTips();
   for (const [path, heading] of [["/play", "Bostie's Favourite"], ["/play/draw", "How to play"], ["/play/parkour", "How to play"]]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     await readTips();
+    if (path !== "/play/draw") continue;
+    // Drawing has tips on the canvas and on the result too.
+    await page.getByRole("button", { name: "Start drawing" }).click();
+    await readTips();
+    const sheet = page.locator("canvas");
+    await sheet.scrollIntoViewIfNeeded();
+    const box = (await sheet.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.7, { steps: 6 });
+    await page.mouse.up();
+    await page.getByRole("button", { name: "Submit drawing" }).click();
+    await dismissRewards(page);
+    await readTips();
+    await expect(page.getByTestId("draw-score")).toHaveText("82%");
   }
   await shot(page, "06b-parkour-intro");
 
@@ -286,6 +314,7 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await page.goto("/journey");
   await page.getByRole("button", { name: control("finish") }).click();
   expect(await dismissRewards(page)).toContain("First Ride");
+  await readTips(); // what the journey earned
   await expect(page.getByRole("heading", { name: "Journey complete" })).toBeVisible();
   await shot(page, "12-journey-complete");
 
@@ -1628,4 +1657,57 @@ test("Social-to-Trip: a TikTok link is refused honestly, a YouTube link and a sc
   expect((await stopNames(page))!.map((n) => n!.replace(/^\d\. /, "")).sort()).toEqual(["MOCK MFA", "MOCK Tatte Bakery"]);
   await expect(card(page, "MOCK Tatte Bakery")).toContainText("Hours not listed"); // no hours from Google: said, not guessed
   expect((await tripsStore(page)).trips[0]).toMatchObject({ origin: "import" });
+});
+
+test("Trips: skip a stop with its switch, drag stops by hand, and the day recalculates each time", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/trips");
+  await page.getByRole("button", { name: "Build it myself", exact: true }).click();
+  for (const [q, name] of [["harvard", "MOCK Harvard Art Museums"], ["fenway", "MOCK Fenway Park"], ["mfa", "MOCK MFA"]]) {
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Add a place" });
+    await sheet.getByRole("textbox", { name: "Search for a place" }).fill(q);
+    await sheet.getByRole("button", { name: `Add ${name}` }).click();
+    await expect(card(page, name)).toBeVisible();
+  }
+  const summary = page.getByTestId("trip-day-summary");
+  const legs = page.getByTestId("trip-leg");
+  await expect(summary).toContainText("3 stops");
+  await expect(legs).toHaveCount(3);
+  const before = await summary.innerText();
+  const mfaArrival = await card(page, "MOCK MFA").innerText();
+
+  // Switch the middle stop off: it stays in the list, greyed, and the day is worked out again without it.
+  await page.getByRole("switch", { name: "Include MOCK Fenway Park in the day" }).click();
+  await expect(summary).toContainText("2 stops");
+  expect(await summary.innerText()).not.toBe(before);
+  await expect(legs).toHaveCount(2); // no travel to a skipped stop
+  await expect(page.getByRole("button", { name: "Skipped: MOCK Fenway Park" })).toContainText("not part of this day");
+  expect(await stopNames(page)).toEqual(["1. MOCK Harvard Art Museums", "2. MOCK MFA"]); // renumbered
+  expect(await card(page, "MOCK MFA").innerText()).not.toBe(mfaArrival); // arrives earlier now
+  await page.waitForTimeout(600); // let the list settle
+  await shot(page, "36-trip-skip");
+  expect((await tripsStore(page)).trips[0].days[0].map((x: { skipped?: boolean }) => !!x.skipped)).toEqual([false, true, false]);
+
+  // Switch it back on: it returns to the same place in the day.
+  await page.getByRole("switch", { name: "Include MOCK Fenway Park in the day" }).click();
+  await expect(summary).toContainText("3 stops");
+  expect(await summary.innerText()).toBe(before);
+  expect(await stopNames(page)).toEqual(["1. MOCK Harvard Art Museums", "2. MOCK Fenway Park", "3. MOCK MFA"]);
+
+  // Drag the first stop to the bottom by its handle.
+  const handle = page.getByTestId("trip-drag").first();
+  await handle.scrollIntoViewIfNeeded();
+  const from = (await handle.boundingBox())!;
+  const last = (await page.getByTestId("trip-stop").last().boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, last.y + last.height + 20, { steps: 24 });
+  await page.mouse.up();
+  await expect.poll(() => stopNames(page)).toEqual(["1. MOCK Fenway Park", "2. MOCK MFA", "3. MOCK Harvard Art Museums"]);
+  // The travel was worked out again for the new order: the long T ride now comes last.
+  await expect(legs.nth(2)).toContainText(/Harvard/);
+  expect(await summary.innerText()).not.toBe(before);
+  expect((await tripsStore(page)).trips[0].days[0].map((x: { name: string }) => x.name)).toEqual(["MOCK Fenway Park", "MOCK MFA", "MOCK Harvard Art Museums"]);
 });

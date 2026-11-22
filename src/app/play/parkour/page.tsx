@@ -211,7 +211,7 @@ export default function ParkourPage() {
       </div>
       <div className="space-y-2 px-5 pt-3">
         <XpNote left={paidPlaysLeft(events, "parkour", now)} />
-        <Button size="lg" className="w-full" onClick={start}>{end ? "Run again" : "Start run"}</Button>
+        <Button size="lg" className="w-full" onClick={start} data-tour="parkour-start">{end ? "Run again" : "Start run"}</Button>
         {end && <Link href="/play" className="flex h-11 items-center justify-center text-[15px] font-semibold text-forest">Back to games</Link>}
       </div>
     </div>

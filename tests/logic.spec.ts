@@ -636,6 +636,17 @@ test.describe("Trips planning", () => {
     expect(clock(13 * 60 + 5)).toBe("1:05 PM");
   });
 
+  test("a skipped stop is left out: no visit, no travel to it, and the next stop is reached from the one before", () => {
+    const [a, b, c] = [stop("a", at("place-harsq")), stop("b", at("place-sstat")), stop("c", at("place-cntsq"))];
+    const all = schedule([a, b, c], "place-harsq", 3);
+    const without = schedule([a, { ...b, skipped: true }, c], "place-harsq", 3);
+    expect(without.map((t) => t.stop.key)).toEqual(["a", "c"]);
+    expect(without[1].leg).toEqual(legBetween(at("place-harsq"), at("place-cntsq"))); // straight from a to c
+    expect(without[1].arrive).toBeLessThan(all[2].arrive);
+    expect(dayTotals(without).stops).toBe(2);
+    expect(dayTotals(without).transitCents).toBeLessThan(dayTotals(all).transitCents);
+  });
+
   test("costs: fares are exact, a 1-Day Pass caps them, and place costs only count what Google lists", () => {
     const hop = ["place-harsq", "place-pktrm", "place-harsq", "place-pktrm", "place-harsq", "place-pktrm"].map((id, i) => stop(`s${i}`, at(id), i === 1 ? { priceRange: { low: 10, high: 20 } } : {}));
     const totals = dayTotals(schedule(hop, "place-pktrm", 3));

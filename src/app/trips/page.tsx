@@ -27,7 +27,7 @@ export default function TripsPage() {
   ];
 
   return (
-    <div data-scene="trips" className="scroll-area h-full pb-8">
+    <div data-scene={view === "home" ? "trips" : view === "import" ? "trip-import" : "trip-generate"} className="scroll-area h-full pb-8">
       <AnimatePresence mode="wait" initial={false}>
         {view === "home" ? (
           <motion.div key="home" initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.2 }}>
@@ -42,12 +42,14 @@ export default function TripsPage() {
                         create({ name: "My Boston trip", origin: "manual", startStationId: "place-pktrm", days: [[]] });
                         toPlan();
                       }}
+                      aria-label={title}
+                      aria-describedby={`way-${id}`}
                       className={`flex w-full items-center gap-3.5 rounded-3xl px-4 py-4 text-left shadow-card ${tint}`}
                     >
                       <Icon size={28} className={`shrink-0 ${icon}`} aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[17.5px] font-bold">{title}</span>
-                        <span className={`block text-[13.5px] leading-snug ${sub}`}>{body}</span>
+                        <span id={`way-${id}`} className={`block text-[13.5px] leading-snug ${sub}`}>{body}</span>
                       </span>
                       <ChevronRight size={20} className="shrink-0 opacity-60" aria-hidden />
                     </button>

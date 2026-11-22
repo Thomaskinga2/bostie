@@ -198,7 +198,7 @@ export function ImportTrip({ onDone, onCancel }: { onDone: () => void; onCancel:
           </div>
         </div>
       ) : (
-        <div className="mt-4">
+        <div className="mt-4" data-tour="import-source">
           <Segment label="Import from" value={source} onChange={(v) => (setSource(v), setError(""))} options={[["link", "Link"], ["video", "Video"], ["shots", "Screenshots"]] as const} />
           {source === "link" ? (
             <form className="mt-3" onSubmit={(e) => (e.preventDefault(), link.trim() && run({ youtube: link.trim() }))}>
@@ -266,7 +266,7 @@ export function GenerateTrip({ onDone, onCancel }: { onDone: () => void; onCance
       <p className="mt-1 text-[14.5px] leading-snug text-ink-soft">Tell Bostie what you like. Gemini drafts the days; every place is checked on the map before you see it.</p>
 
       <h3 className="mt-4 text-[15px] font-bold">What are you into?</h3>
-      <div role="group" aria-label="Interests" className="mt-2 flex flex-wrap gap-2">
+      <div role="group" aria-label="Interests" data-tour="generate-prefs" className="mt-2 flex flex-wrap gap-2">
         {[...INTERESTS.map((i) => [i.id, i.label] as const), ...MORE_INTERESTS].map(([id, label]) => {
           const on = interests.includes(id);
           return (
@@ -296,7 +296,7 @@ export function GenerateTrip({ onDone, onCancel }: { onDone: () => void; onCance
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="With kids, loves bookshops, no seafood…" className="mt-2 h-12 w-full rounded-2xl border border-line bg-card px-3.5 text-[16px] placeholder:text-ink-faint" />
       </label>
       {error && <p role="alert" className="mt-3 rounded-2xl bg-gold-soft px-4 py-3 text-[14px] font-semibold text-[#5b410b]">{error}</p>}
-      <Button size="lg" className="mt-4 w-full" onClick={plan}><Sparkles size={18} aria-hidden /> Plan my trip</Button>
+      <Button size="lg" className="mt-4 w-full" onClick={plan} data-tour="generate-go"><Sparkles size={18} aria-hidden /> Plan my trip</Button>
     </div>
   );
 }

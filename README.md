@@ -164,7 +164,7 @@ node scripts/smoke-scan.mjs http://localhost:3000   # quick live scan check
 
 ## Judge walkthrough (about four minutes)
 
-Open the site on a laptop and choose **Judging? Take the guided demo** (or switch **Demo mode** on at the top right at any time). The first time each screen appears, its features are highlighted one at a time with a short description beside them (tap **Next**, or **Skip tips** to turn them off). The **Guide** button replays the highlights for the current screen. The gold strip in the app and the left panel tick off each demo step.
+Open the site on a laptop, tap **Start exploring**, and switch **Demo mode** on at the top right (on a phone: Passport → Settings → Demo mode). The first time each screen appears, its features are highlighted one at a time with a short description beside them (tap **Next**, or **Skip tips** to turn them off). The **Guide** button replays the highlights for the current screen. The gold strip in the app and the left panel tick off each demo step.
 
 All of that wording lives in one file, `src/lib/guide.ts`. A feature is linked to its highlight by a `data-tour` attribute. When the app changes, edit that file, bump `GUIDE_VERSION` (returning visitors then see the revised highlights once) and run `npm test`: the tests fail, naming the highlight, if one no longer finds its feature or a button label has changed.
 

@@ -11,8 +11,11 @@ import { bestStationFor, legInfo, nearestStation, STATION, walkFor, type Plan, t
 import { PLACES } from "./places";
 
 export type { TripStop };
-/** `key` identifies a stop inside its trip, so the same place can be visited twice. */
-export type Stop = TripStop & { key: string };
+/**
+ * `key` identifies a stop inside its trip, so the same place can be visited twice.
+ * `skipped` keeps a stop in the list but leaves it out of the day: no visit, no travel to it.
+ */
+export type Stop = TripStop & { key: string; skipped?: boolean };
 export type Trip = {
   id: string;
   name: string;
@@ -100,7 +103,8 @@ export type Timed = { stop: Stop; leg: Leg; arrive: number; leave: number; open:
 export function schedule(day: Stop[], startStationId: string, weekday: number, startAt = DAY_START): Timed[] {
   let at: LatLng = STATION[startStationId] ?? STATION["place-pktrm"];
   let clock = startAt;
-  return day.map((stop) => {
+  // Skipped stops are not visited, so the leg runs from the stop before to the stop after.
+  return day.filter((s) => !s.skipped).map((stop) => {
     const leg = legBetween(at, stop);
     const arrive = clock + leg.minutes;
     clock = arrive + stop.minutes;

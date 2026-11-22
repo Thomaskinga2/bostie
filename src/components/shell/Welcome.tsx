@@ -36,7 +36,7 @@ const draw = (delay: number, duration = 0.6) => ({
   transition: { delay, duration, ease: "easeOut" as const },
 });
 
-/** A Red Line car pulling into Harvard, drawn in ink. */
+/** A Red Line car pulling into the platform, drawn in ink. The sign reads Boston. */
 function PlatformScene() {
   return (
     <svg viewBox="0 0 340 214" className="w-full overflow-visible" role="img" aria-label="A subway train arriving at a platform">
@@ -49,7 +49,7 @@ function PlatformScene() {
         <path d="M22 4 V20 M78 4 V20" {...pen} />
         <rect x="8" y="20" width="84" height="26" rx="5" fill={INK} />
         <rect x="8" y="20" width="84" height="6" rx="3" fill="#da291c" />
-        <text x="50" y="40" textAnchor="middle" fill="#fff" fontSize="11.5" fontWeight="700" fontFamily="var(--font-sans)">Harvard</text>
+        <text x="50" y="40" textAnchor="middle" fill="#fff" fontSize="11.5" fontWeight="700" fontFamily="var(--font-sans)">Boston</text>
       </motion.g>
 
       {/* the train rolls in from the tunnel */}
@@ -180,7 +180,6 @@ export function Welcome() {
   const reduced = useReducedMotion();
   const [phase, setPhase] = useState<Phase>("landing");
   const [origin, setOrigin] = useState({ x: 200, y: 600 });
-  const [demo, setDemo] = useState(false);
   const [name, setLocal] = useState("");
 
   // Step through the door animation, one beat at a time.
@@ -191,17 +190,17 @@ export function Welcome() {
     return () => clearTimeout(t);
   }, [phase]);
 
-  const board = (wantsDemo: boolean, e: React.MouseEvent<HTMLButtonElement>) => {
+  const board = (e: React.MouseEvent<HTMLButtonElement>) => {
     const button = e.currentTarget.getBoundingClientRect();
     const main = e.currentTarget.closest("[data-welcome]")?.getBoundingClientRect();
     if (main) setOrigin({ x: button.left + button.width / 2 - main.left, y: button.top + button.height / 2 - main.top });
-    setDemo(wantsDemo);
     setPhase(reduced ? "name" : "wipe");
   };
 
   const finish = () => {
     if (name.trim()) setName(name);
-    onboard(demo);
+    // Demo mode is chosen in Settings (or beside the phone frame), so replaying the intro keeps it as it was.
+    onboard(useStore.getState().demo);
   };
 
   const showName = phase === "open" || phase === "fade" || phase === "name";
@@ -245,11 +244,8 @@ export function Welcome() {
                 transition={{ delay: 1.9, type: "spring", stiffness: 200, damping: 16 }}
               />
             </div>
-            <Button size="lg" className="relative w-full" onClick={(e) => board(false, e)} disabled={phase !== "landing"}>
+            <Button size="lg" className="relative w-full" onClick={board} disabled={phase !== "landing"}>
               Start exploring
-            </Button>
-            <Button variant="quiet" className="w-full" onClick={(e) => board(true, e)} disabled={phase !== "landing"}>
-              Judging? Take the guided demo
             </Button>
             <p className="text-center text-[13px] text-ink-faint">No account needed. Nothing to install.</p>
           </motion.div>
@@ -298,9 +294,7 @@ export function Welcome() {
           <div className="w-full space-y-2.5">
             <Button type="submit" size="lg" className="w-full">Continue</Button>
             <p className="text-[13px] leading-snug text-ink-faint">
-              {demo
-                ? "Next: a guided ride from Harvard to Park Street. The trip is simulated; everything Gemini does is real."
-                : "Next: your map of Boston, with live MBTA departures."}
+              Next: your map of Boston, with live MBTA departures.
             </p>
           </div>
         </form>

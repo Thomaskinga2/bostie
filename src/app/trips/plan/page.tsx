@@ -47,28 +47,44 @@ function LegRow({ t, onRide }: { t: Timed; onRide: () => void }) {
   );
 }
 
-function StopCard({ t, n, selected, onOpen }: { t: Timed; n: number; selected: boolean; onOpen: () => void }) {
+/**
+ * One stop in the list, with the way to reach it above. The whole unit drags by its handle.
+ * Switching it off keeps it in the list but leaves it out of the day.
+ */
+function StopCard({ stop, t, n, selected, onOpen, onRide, onToggle }: { stop: Stop; t?: Timed; n: number | null; selected: boolean; onOpen: () => void; onRide: () => void; onToggle: () => void }) {
   const drag = useDragControls();
-  const { stop } = t;
+  const on = !stop.skipped;
   return (
-    <Reorder.Item value={stop} dragListener={false} dragControls={drag} id={`stop-${stop.key}`} className={cx("flex items-stretch overflow-hidden rounded-2xl border bg-card", selected ? "border-forest shadow-card ring-1 ring-forest" : "border-line")} whileDrag={{ scale: 1.02, boxShadow: "0 10px 28px rgba(0,0,0,0.18)" }}>
-      <button onClick={onOpen} aria-label={`${n}. ${stop.name}`} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left">
-        <span className="relative shrink-0">
-          <PlacePhoto place={stop} className="size-[68px] rounded-xl" />
-          <span className="absolute -left-1 -top-1 grid size-6 place-items-center rounded-full bg-forest text-[12px] font-bold text-paper ring-2 ring-card">{n}</span>
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[16px] font-bold">{stop.name}</span>
-          <span className="block truncate text-[13px] text-ink-soft">{[stop.category, priceText(stop), stop.rating ? `${stop.rating.toFixed(1)} stars` : null].filter(Boolean).join(" · ") || stop.address}</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
-            <span className="flex items-center gap-1 text-ink-soft"><Clock size={13} aria-hidden /> {clock(t.arrive)}, {stop.minutes} min</span>
-            <span className={cx("rounded-full px-2 py-0.5 text-[11.5px] font-bold leading-none", t.open === true ? "bg-moss text-forest-deep" : t.open === false ? "bg-[#fbe4e1] text-[#8a1a12]" : "bg-sand text-ink-soft")}>
-              {t.open === true ? "Open then" : t.open === false ? "Closed then" : "Hours not listed"}
-            </span>
+    <Reorder.Item value={stop} layout="position" dragListener={false} dragControls={drag} id={`stop-${stop.key}`} data-testid="trip-stop" className="relative" whileDrag={{ scale: 1.02, zIndex: 5 }}>
+      {t && <LegRow t={t} onRide={onRide} />}
+      <div className={cx("mt-1.5 flex items-stretch overflow-hidden rounded-2xl border bg-card", selected ? "border-forest shadow-card ring-1 ring-forest" : "border-line", !on && "opacity-60")}>
+        <button onClick={onOpen} aria-label={n ? `${n}. ${stop.name}` : `Skipped: ${stop.name}`} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left">
+          <span className="relative shrink-0">
+            <PlacePhoto place={stop} className={cx("size-[68px] rounded-xl", !on && "grayscale")} />
+            <span className={cx("absolute -left-1 -top-1 grid size-6 place-items-center rounded-full text-[12px] font-bold ring-2 ring-card", on ? "bg-forest text-paper" : "bg-sand text-ink-soft")}>{n ?? "–"}</span>
           </span>
+          <span className="min-w-0 flex-1">
+            <span className={cx("block truncate text-[16px] font-bold", !on && "line-through")}>{stop.name}</span>
+            <span className="block truncate text-[13px] text-ink-soft">{[stop.category, priceText(stop), stop.rating ? `${stop.rating.toFixed(1)} stars` : null].filter(Boolean).join(" · ") || stop.address}</span>
+            {t ? (
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
+                <span className="flex items-center gap-1 text-ink-soft"><Clock size={13} aria-hidden /> {clock(t.arrive)}, {stop.minutes} min</span>
+                <span className={cx("rounded-full px-2 py-0.5 text-[11.5px] font-bold leading-none", t.open === true ? "bg-moss text-forest-deep" : t.open === false ? "bg-[#fbe4e1] text-[#8a1a12]" : "bg-sand text-ink-soft")}>
+                  {t.open === true ? "Open then" : t.open === false ? "Closed then" : "Hours not listed"}
+                </span>
+              </span>
+            ) : (
+              <span className="mt-0.5 block text-[12.5px] font-semibold text-ink-soft">Skipped: not part of this day</span>
+            )}
+          </span>
+        </button>
+        <span className="flex w-[52px] shrink-0 flex-col items-center justify-between border-l border-line py-1.5">
+          <button role="switch" aria-checked={on} aria-label={`Include ${stop.name} in the day`} onClick={onToggle} className={cx("relative h-6 w-10 rounded-full transition-colors", on ? "bg-forest" : "bg-line")}>
+            <span className={cx("absolute top-0.5 size-5 rounded-full bg-white shadow transition-[left]", on ? "left-[18px]" : "left-0.5")} />
+          </button>
+          <span onPointerDown={(e) => drag.start(e)} role="img" aria-label={`Drag to move ${stop.name}`} data-testid="trip-drag" className="grid h-10 w-full cursor-grab touch-none place-items-center text-ink-soft active:cursor-grabbing"><GripVertical size={22} /></span>
         </span>
-      </button>
-      <span onPointerDown={(e) => drag.start(e)} aria-hidden className="grid w-10 shrink-0 cursor-grab touch-none place-items-center text-ink-faint active:cursor-grabbing"><GripVertical size={20} /></span>
+      </div>
     </Reorder.Item>
   );
 }
@@ -181,7 +197,9 @@ export default function TripPlanPage() {
     );
 
   const setStops = (next: Stop[]) => update(trip.id, (t) => ({ ...t, days: t.days.map((x, i) => (i === d ? next : x)) }));
-  const open = timed.find((t) => t.stop.key === detail);
+  const openStop = stops.find((x) => x.key === detail);
+  const openTimed = timed.find((t) => t.stop.key === detail);
+  const open = openStop ? { stop: openStop, arrive: openTimed?.arrive ?? null } : undefined;
   const openIndex = stops.findIndex((s) => s.key === detail);
   const move = (from: number, to: number) => {
     if (to < 0 || to >= stops.length) return;
@@ -256,21 +274,23 @@ export default function TripPlanPage() {
           <>
             <div className="flex items-center justify-between gap-2" data-tour="trip-tools">
               <p className="text-[13.5px] text-ink-soft" data-testid="trip-day-summary">
-                {totals.stops ? `${totals.stops} stops, about ${Math.floor(totals.minutes / 60)} h ${totals.minutes % 60} min, T fares ${formatFare(totals.transitCents)}` : "Nothing planned for this day yet."}
+                {totals.stops ? `${totals.stops} stop${totals.stops === 1 ? "" : "s"}, about ${Math.floor(totals.minutes / 60)} h ${totals.minutes % 60} min, T fares ${formatFare(totals.transitCents)}` : "Nothing planned for this day yet."}
               </p>
               <div className="flex shrink-0 gap-1.5">
-                <Button size="sm" variant="secondary" disabled={stops.length < 3} onClick={() => (setStops(orderStops(STATION[trip.startStationId], stops)), emitTrip({ t: "trip-optimized", tripId: trip.id, day: d }))}><Wand2 size={15} aria-hidden /> Optimize</Button>
+                <Button size="sm" variant="secondary" disabled={stops.filter((x) => !x.skipped).length < 3} onClick={() => (setStops([...orderStops(STATION[trip.startStationId], stops.filter((x) => !x.skipped)), ...stops.filter((x) => x.skipped)]), emitTrip({ t: "trip-optimized", tripId: trip.id, day: d }))}><Wand2 size={15} aria-hidden /> Optimize</Button>
                 <Button size="sm" onClick={() => setAdding(true)}><Plus size={15} aria-hidden /> Add</Button>
               </div>
             </div>
             {stops.length ? (
-              <Reorder.Group axis="y" values={stops} onReorder={setStops} data-tour="trip-list" aria-label={`Day ${d + 1} stops`} className="mt-2">
-                {timed.map((t, i) => (
-                  <div key={t.stop.key}>
-                    <LegRow t={t} onRide={() => ride(t)} />
-                    <StopCard t={t} n={i + 1} selected={selected === t.stop.key} onOpen={() => (setSelected(t.stop.key), setDetail(t.stop.key))} />
-                  </div>
-                ))}
+              <Reorder.Group axis="y" values={stops} onReorder={setStops} data-tour="trip-list" aria-label={`Day ${d + 1} stops`} className="mt-1">
+                {stops.map((stop) => {
+                  // Times, travel and numbers come from the stops that are switched on, in their current order.
+                  const at = timed.findIndex((t) => t.stop.key === stop.key);
+                  const t = timed[at];
+                  return (
+                    <StopCard key={stop.key} stop={stop} t={t} n={t ? at + 1 : null} selected={selected === stop.key} onOpen={() => (setSelected(stop.key), setDetail(stop.key))} onRide={() => t && ride(t)} onToggle={() => setStops(stops.map((x) => (x.key === stop.key ? { ...x, skipped: !x.skipped } : x)))} />
+                  );
+                })}
               </Reorder.Group>
             ) : (
               <div data-tour="trip-list" className="mt-3">
@@ -293,7 +313,7 @@ export default function TripPlanPage() {
               {open.stop.summary && <p className="mt-2 text-[15.5px] leading-snug">{open.stop.summary}</p>}
               {open.stop.why && <p className="mt-2 rounded-2xl bg-moss px-3.5 py-2.5 text-[14.5px] leading-snug text-forest-deep">{open.stop.why}</p>}
               <div className="mt-3 flex items-center justify-between rounded-2xl border border-line px-3.5 py-2.5">
-                <span className="text-[14.5px]">Arrive {clock(open.arrive)}, stay <strong>{open.stop.minutes} min</strong></span>
+                <span className="text-[14.5px]">{open.arrive === null ? "Skipped. Would " : `Arrive ${clock(open.arrive)}, `}stay <strong>{open.stop.minutes} min</strong></span>
                 <span className="flex gap-1.5">
                   {[-15, 15].map((step) => (
                     <button key={step} aria-label={step < 0 ? "Stay 15 minutes less" : "Stay 15 minutes more"} onClick={() => setStops(stops.map((s) => (s.key === open.stop.key ? { ...s, minutes: Math.min(240, Math.max(15, s.minutes + step)) } : s)))} className="grid size-9 place-items-center rounded-full bg-sand text-[18px] font-bold">{step < 0 ? "−" : "+"}</button>

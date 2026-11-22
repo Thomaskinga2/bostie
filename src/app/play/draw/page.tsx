@@ -176,11 +176,11 @@ export default function DrawPage() {
     const { res, picture, xp } = result;
     const good = res.score >= 50;
     return (
-      <div className="scroll-area h-full pb-8" data-testid="draw-result">
+      <div data-scene="play-draw-result" className="scroll-area h-full pb-8" data-testid="draw-result">
         <GameHeader title="Bostie Drawing" progress="Result" />
         <div className="px-5 pt-3">
           <Bostie mood={good ? "win" : res.score > 0 ? "cheer" : "oops"} say={good ? "Whoa, that's your masterpiece!" : res.score > 0 ? "I can see where you were going!" : "Hmm, I could not make that one out."} size={70} />
-          <div className="mt-3 flex items-end gap-5 border-y border-line py-3.5">
+          <div data-tour="draw-score" className="mt-3 flex items-end gap-5 border-y border-line py-3.5">
             <div>
               <p className="font-display text-[52px] font-bold leading-none text-forest" data-testid="draw-score">{shown}%</p>
               <p className="mt-1 text-[12.5px] text-ink-soft">recognizable, in Bostie&apos;s opinion</p>
@@ -192,7 +192,7 @@ export default function DrawPage() {
           </div>
           <p className="mt-3 text-[16px] leading-snug">{res.feedback}</p>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div data-tour="draw-compare" className="mt-4 grid grid-cols-2 gap-3">
             <figure>
               {/* eslint-disable-next-line @next/next/no-img-element -- the player's own drawing, held in memory */}
               <img src={picture} alt={`Your drawing of ${subject.name}`} className="aspect-square w-full rounded-2xl border border-line bg-white object-cover" />
@@ -229,12 +229,13 @@ export default function DrawPage() {
   // ---- canvas -------------------------------------------------------------------
   const tool = "grid size-11 shrink-0 place-items-center rounded-full border border-line bg-card text-ink disabled:opacity-35";
   return (
-    <div className="flex h-full flex-col">
+    <div data-scene="play-draw-canvas" className="flex h-full flex-col">
       <GameHeader title="Bostie Drawing" onExit={() => setSubject(null)} exitLabel="Quit" />
       <div className="scroll-area min-h-0 flex-1 px-4 pb-3 pt-1">
         <Bostie mood={busy ? "thinking" : "welcome"} say={busy ? "Let me have a good look…" : `Draw: ${subject.name}`} size={50} />
         <h1 className="sr-only">Draw {subject.name}</h1>
         {/* Something to look at while drawing: the photo, or for symbols the things to include. */}
+        <div data-tour="draw-reference">
         {subject.photo ? (
           <Photo id={subject.photo} className="mt-2 h-[116px] rounded-2xl" alt={`Reference photo: ${subject.name}`} />
         ) : (
@@ -242,10 +243,12 @@ export default function DrawPage() {
             <strong className="text-ink">No photo for this one. Try to include:</strong> {subject.cues.join(", ")}.
           </p>
         )}
+        </div>
         <canvas
           ref={canvas}
           width={SIZE}
           height={SIZE}
+          data-tour="draw-canvas"
           aria-label={`Drawing canvas: ${subject.name}`}
           onPointerDown={down}
           onPointerMove={move}
@@ -254,6 +257,7 @@ export default function DrawPage() {
           className="mt-2 aspect-square w-full touch-none rounded-3xl border-2 border-line bg-white shadow-card"
           style={{ cursor: "crosshair" }}
         />
+        <div data-tour="draw-tools">
         <div role="radiogroup" aria-label="Colour" className="mt-3 flex flex-wrap items-center justify-between gap-1.5">
           {COLORS.map((c) => (
             <button key={c} role="radio" aria-checked={!erase && color === c} aria-label={`Colour ${c}`} onClick={() => (setColor(c), setErase(false))} className={cx("size-9 rounded-full border-2", !erase && color === c ? "border-ink ring-2 ring-gold" : "border-white")} style={{ background: c }} />
@@ -270,8 +274,9 @@ export default function DrawPage() {
           <button onClick={redo} disabled={!undone.length} aria-label="Redo" className={tool}><Redo2 size={19} /></button>
           <button onClick={() => (setUndone([]), setStrokes([]))} disabled={!strokes.length} aria-label="Clear canvas" className={tool}><Trash2 size={19} /></button>
         </div>
+        </div>
       </div>
-      <div className="shrink-0 border-t border-line bg-card px-4 pb-3 pt-3">
+      <div data-tour="draw-submit" className="shrink-0 border-t border-line bg-card px-4 pb-3 pt-3">
         {error && <p role="alert" className="mb-2 text-[13.5px] font-semibold text-t-red">{error}</p>}
         <Button size="lg" className="w-full" onClick={submit} disabled={busy}>{busy ? "Bostie is looking…" : error && hasInk(strokes) ? "Try again" : "Submit drawing"}</Button>
       </div>
