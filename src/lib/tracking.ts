@@ -5,7 +5,7 @@
 // GPS is unreliable underground, so this only ever ADDS to manual control: the confirm
 // button is always there, a stale or missing signal is shown plainly, and a blocked
 // permission switches the journey back to manual.
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { distanceKm, type LatLng } from "./geo";
 import { STATION } from "./network";
 import { useStore, type Journey } from "./store";
@@ -59,11 +59,23 @@ export function autoSteps(j: Journey, fix: LatLng): number {
 
 export type TrackingStatus = "off" | "simulated" | "asking" | "tracking" | "blocked" | "unsupported";
 
-/** Runs while a journey is in automatic mode. Returns what the tracker is doing and when it last heard from GPS. */
+/** What the tracker is doing and when it last heard from GPS. Safe to read from any screen. */
 export function useJourneyTracking(): { status: TrackingStatus; lastFixAt: number | null; accuracyM: number | null } {
   const active = useStore((s) => !!s.journey && s.journey.tracking === "auto" && s.journey.stage !== "planning" && s.journey.stage !== "complete");
   const demo = useStore((s) => !!s.journey?.demo);
-  const [live, setLive] = useState<{ status: TrackingStatus; lastFixAt: number | null; accuracyM: number | null }>({ status: "asking", lastFixAt: null, accuracyM: null });
+  const live = useStore((s) => s.track);
+  if (!active) return { status: live.status === "blocked" || live.status === "unsupported" ? live.status : "off", lastFixAt: null, accuracyM: null };
+  return demo ? { status: "simulated", lastFixAt: null, accuracyM: null } : live;
+}
+
+/**
+ * Runs automatic mode for the whole app, so the journey keeps moving while the rider is
+ * on another screen (playing a game on the train, say). Mount it exactly once.
+ */
+export function useJourneyRunner() {
+  const active = useStore((s) => !!s.journey && s.journey.tracking === "auto" && s.journey.stage !== "planning" && s.journey.stage !== "complete");
+  const demo = useStore((s) => !!s.journey?.demo);
+  const setLive = (track: { status: TrackingStatus; lastFixAt: number | null; accuracyM: number | null }) => useStore.setState({ track });
 
   // Demo journeys have no real position: automatic mode plays the ride at a steady pace,
   // pausing while a reward is on screen and stopping on arrival.
@@ -79,10 +91,11 @@ export function useJourneyTracking(): { status: TrackingStatus; lastFixAt: numbe
 
   useEffect(() => {
     if (!active || demo) return;
+    setLive({ status: "asking", lastFixAt: null, accuracyM: null });
     if (!navigator.geolocation) {
       useStore.getState().setTracking("manual");
-      const t = setTimeout(() => setLive({ status: "unsupported", lastFixAt: null, accuracyM: null }), 0);
-      return () => clearTimeout(t);
+      setLive({ status: "unsupported", lastFixAt: null, accuracyM: null });
+      return;
     }
     const id = navigator.geolocation.watchPosition(
       (pos) => {
@@ -111,7 +124,4 @@ export function useJourneyTracking(): { status: TrackingStatus; lastFixAt: numbe
     );
     return () => navigator.geolocation.clearWatch(id);
   }, [active, demo]);
-
-  if (!active) return { status: live.status === "blocked" || live.status === "unsupported" ? live.status : "off", lastFixAt: null, accuracyM: null };
-  return demo ? { status: "simulated", lastFixAt: null, accuracyM: null } : live;
 }

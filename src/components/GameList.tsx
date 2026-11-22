@@ -26,12 +26,14 @@ export function GameCards({ className }: { className?: string }) {
   );
 }
 
-/** The games, offered while waiting for a train. */
-export function GameList({ className }: { className?: string }) {
+/** The games, offered while waiting for a train or riding one. */
+export function GameList({ className, riding = false }: { className?: string; riding?: boolean }) {
   return (
-    <section data-tour="play-while-waiting" aria-labelledby="games-h" className={className}>
-      <h2 id="games-h" className="text-[20px] font-bold">Play while you wait</h2>
-      <p className="text-[14px] text-ink-soft">Bostie&apos;s Favourite: three quick games about Boston.</p>
+    <section aria-labelledby="games-h" className={className}>
+      <h2 id="games-h" className="text-[20px] font-bold">{riding ? "Play while you ride" : "Play while you wait"}</h2>
+      <p className="text-[14px] text-ink-soft">
+        Bostie&apos;s Favourite: three quick games about Boston.{riding ? " Bostie tells you when your stop is next, on any screen." : ""}
+      </p>
       <GameCards className="mt-2.5 overflow-hidden rounded-3xl border border-line bg-card" />
     </section>
   );

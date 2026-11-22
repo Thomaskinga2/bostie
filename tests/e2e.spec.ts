@@ -367,6 +367,7 @@ test("Bostie Guessing: a hint, a wrong pick, a pin, Gemini being down, and playi
   await page.getByRole("group", { name: "Map of Boston and the MBTA network" }).click({ position: { x: 120, y: 120 } });
   await page.getByRole("button", { name: "Lock in this pin" }).click();
   await expect(page.getByTestId("answer-note")).toContainText("from the spot");
+  await expect(page.getByTestId("pin-map").getByText("Your pin")).toBeVisible(); // the map shows the pin and the real place
   await shot(page, "15-pin-result");
   await page.getByRole("button", { name: "Next question" }).click();
 
@@ -417,21 +418,22 @@ test("Bostie Drawing: tools, an empty canvas, Gemini failing, then a scored resu
   await page.goto("/play/draw");
   await page.getByRole("button", { name: "Start drawing" }).click();
   const canvas = page.locator("canvas");
+  await expect(page.getByRole("img", { name: /^Reference photo:/ }).or(page.getByTestId("draw-cues"))).toBeVisible(); // something to copy from while drawing
   const submit = page.getByRole("button", { name: /Submit drawing|Try again/ });
 
   await submit.click();
   await expect(page.getByRole("alert").filter({ hasText: "Draw something first" })).toBeVisible();
   expect(calls).toBe(0); // an empty canvas is never sent
 
-  const box = (await canvas.boundingBox())!;
   const stroke = async (from: [number, number], to: [number, number]) => {
+    await canvas.scrollIntoViewIfNeeded();
+    const box = (await canvas.boundingBox())!; // measured each time: the page may have scrolled
     await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 8 });
     await page.mouse.up();
   };
   const ink = () => canvas.evaluate((c: HTMLCanvasElement) => c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data.reduce((n, v, i) => n + (i % 4 === 1 && v < 200 ? 1 : 0), 0));
-  await canvas.scrollIntoViewIfNeeded();
   await stroke([0.2, 0.7], [0.8, 0.7]);
   await page.getByRole("radio", { name: "Colour #da291c" }).click();
   await page.getByLabel("Brush size").fill("20");
@@ -1214,4 +1216,84 @@ test("Ride: a trip can start from any address or place, not only a station", asy
   await page.getByRole("combobox", { name: "Starting point" }).fill("state house");
   await page.getByRole("button", { name: /Start at Massachusetts State House/ }).click();
   await expect(page.getByRole("button", { name: "Change starting point" })).toContainText("Massachusetts State House");
+});
+
+/** Stands in for the phone's notifications and makes the page believe it is in the background. */
+const stubNotifications = (page: Page, permission: "granted" | "denied" = "granted") =>
+  page.addInitScript((perm) => {
+    const w = window as unknown as { notes: { title: string; body?: string }[]; background: boolean };
+    w.notes = [];
+    w.background = false;
+    class FakeNotification {
+      static permission = perm;
+      static requestPermission = async () => perm;
+      constructor(title: string, options?: NotificationOptions) {
+        w.notes.push({ title, body: options?.body });
+      }
+    }
+    Object.defineProperty(window, "Notification", { configurable: true, writable: true, value: FakeNotification });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (w.background ? "hidden" : "visible") });
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { register: async () => undefined, getRegistration: async () => undefined } });
+  }, permission);
+const notes = (page: Page) => page.evaluate(() => (window as unknown as { notes: { title: string; body?: string }[] }).notes);
+
+test("get-off alerts in Manual mode: games on the train, a warning when the stop is next and on arriving", async ({ page }) => {
+  await mockApis(page);
+  await stubNotifications(page);
+  await seed(page);
+  await page.goto("/ride");
+  await page.getByRole("combobox", { name: "Where to?" }).fill("central");
+  await page.getByRole("button", { name: "Go to Central", exact: true }).click();
+  const alerts = page.getByRole("switch", { name: /get-off alerts/i });
+  await expect(alerts).toHaveAttribute("aria-checked", "false");
+  await alerts.click();
+  await expect(alerts).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText(/On: you get a phone notification/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await page.getByRole("button", { name: /I am at the station/ }).click();
+  await page.getByRole("button", { name: "My train is here" }).click();
+  await dismissRewards(page);
+  await page.evaluate(() => ((window as unknown as { background: boolean }).background = true)); // the rider switches to another app
+  await page.getByRole("button", { name: "I am on board" }).click();
+
+  // One stop to go: the warning comes at once, in the app and as a notification.
+  const banner = page.getByTestId("getoff-alert");
+  await expect(banner).toContainText("Next stop: Central");
+  expect(await notes(page)).toEqual([{ title: "Next stop: Central", body: "Get ready to get off." }]);
+  await expect(page.getByRole("region", { name: "Play while you ride" }).getByRole("link")).toHaveCount(3); // games are suggested on the train too
+  await shot(page, "30-getoff-alert");
+  await banner.getByRole("button", { name: "Dismiss alert" }).click();
+  await expect(banner).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Arrived at Central" }).click();
+  await dismissRewards(page);
+  await expect(banner).toContainText("This is Central");
+  expect((await notes(page)).map((n) => n.title)).toEqual(["Next stop: Central", "This is Central"]);
+});
+
+test("get-off alerts in Automatic mode reach the rider inside a game, and stay in the app when notifications are blocked", async ({ page }) => {
+  test.setTimeout(150_000);
+  await mockApis(page);
+  await stubNotifications(page, "denied");
+  await seed(page);
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await page.getByRole("switch", { name: /get-off alerts/i }).click();
+  await expect(page.getByText(/Notifications are blocked for this site/)).toBeVisible(); // says why, and that alerts still show in the app
+  await expect(page.getByRole("switch", { name: /get-off alerts/i })).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("radio", { name: /Automatic/ }).click();
+  await page.getByRole("button", { name: "Start journey" }).click();
+
+  // Off to play while the ride carries on by itself.
+  await page.getByRole("link", { name: "Discover" }).click();
+  await page.goto("/play/guess");
+  await page.evaluate(() => ((window as unknown as { background: boolean }).background = true));
+  const banner = page.getByTestId("getoff-alert");
+  await expect(async () => {
+    await dismissRewards(page); // station stamps pause the demo ride until they are closed
+    await expect(banner).toContainText("Next stop: Park Street", { timeout: 1000 });
+  }).toPass({ timeout: 90_000 });
+  await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible(); // still on the game screen
+  expect(await notes(page)).toEqual([]); // blocked: nothing is sent outside the app
 });

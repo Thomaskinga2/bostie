@@ -3,7 +3,10 @@ import { BatteryFull, Maximize2, Minimize2, Play, RotateCcw, Signal, Sparkles, W
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
+import { useGetOffAlerts } from "@/lib/alerts";
 import { useSupabaseSync } from "@/lib/sync";
+import { useJourneyRunner } from "@/lib/tracking";
+import { AlertBanner } from "./AlertBanner";
 import { Celebrations } from "./Celebrations";
 import { DemoChecklist, DemoStrip } from "./DemoGuide";
 import { GuideButton, Tour } from "./Tour";
@@ -115,6 +118,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Regular visitors get the app on its own. The walkthrough and API log belong to Demo Mode.
   const judging = ready && onboarded && demo;
   useSupabaseSync(); // no-op unless Supabase env vars are set
+  useJourneyRunner(); // automatic mode keeps going on every screen
+  useGetOffAlerts();
   useEffect(() => {
     if (full) document.documentElement.dataset.full = "1";
     else delete document.documentElement.dataset.full;
@@ -152,6 +157,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <ShowcaseSheet />
               {onboarded && <Tour />}
               <Celebrations />
+              <AlertBanner />
             </>
           )}
         </div>

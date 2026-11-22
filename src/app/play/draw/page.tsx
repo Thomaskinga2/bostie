@@ -155,7 +155,7 @@ export default function DrawPage() {
           <h1 className="mt-4 text-[28px] font-bold leading-tight">How to play</h1>
           <ol className="mt-2 space-y-2 text-[15.5px] leading-snug">
             <li><strong>Bostie names something</strong> from Boston: a landmark or a symbol like a swan boat.</li>
-            <li><strong>You draw it</strong> with your finger, a stylus or a mouse.</li>
+            <li><strong>You draw it</strong> with your finger, a stylus or a mouse. A photo stays on screen to copy from.</li>
             <li><strong>Gemini looks at it</strong> and says how recognizable it is, from 0 to 100.</li>
             <li>It is about <strong>being recognizable</strong>, not about being a good artist.</li>
           </ol>
@@ -234,6 +234,14 @@ export default function DrawPage() {
       <div className="scroll-area min-h-0 flex-1 px-4 pb-3 pt-1">
         <Bostie mood={busy ? "thinking" : "welcome"} say={busy ? "Let me have a good look…" : `Draw: ${subject.name}`} size={50} />
         <h1 className="sr-only">Draw {subject.name}</h1>
+        {/* Something to look at while drawing: the photo, or for symbols the things to include. */}
+        {subject.photo ? (
+          <Photo id={subject.photo} className="mt-2 h-[116px] rounded-2xl" alt={`Reference photo: ${subject.name}`} />
+        ) : (
+          <p className="mt-2 rounded-2xl bg-sand px-3.5 py-2.5 text-[13.5px] leading-snug text-ink-soft" data-testid="draw-cues">
+            <strong className="text-ink">No photo for this one. Try to include:</strong> {subject.cues.join(", ")}.
+          </p>
+        )}
         <canvas
           ref={canvas}
           width={SIZE}

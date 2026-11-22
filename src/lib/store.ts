@@ -29,6 +29,8 @@ export type Journey = {
   walkTo?: WalkTo;
   /** The address or place the trip starts from, when it is not a station: the walk to the first station. */
   walkFrom?: WalkTo;
+  /** When the rider got on the current train: the get-off estimate counts from here. */
+  boardedAt?: number;
   /** "auto" follows the rider's live location; "manual" waits for a tap at each step. */
   tracking?: "auto" | "manual";
 };
@@ -82,6 +84,14 @@ type State = Progress & {
   /** Game sounds. Off until the player turns them on. */
   sound: boolean;
   setSound: (on: boolean) => void;
+  /** Get-off alerts as phone notifications. Needs the phone's permission, asked when turned on. */
+  alerts: boolean;
+  setAlerts: (on: boolean) => void;
+  /** The alert currently shown as a banner inside the app. */
+  notice: { tag: string; title: string; body: string } | null;
+  setNotice: (n: State["notice"]) => void;
+  /** What the automatic tracker is doing (see lib/tracking.ts). */
+  track: { status: "off" | "simulated" | "asking" | "tracking" | "blocked" | "unsupported"; lastFixAt: number | null; accuracyM: number | null };
   addTrailPoint: (p: TrailPoint) => void;
   clearTrail: () => void;
   dismissCelebration: () => void;
@@ -163,6 +173,11 @@ export const useStore = create<State>()(
       removeRecent: (stationId) => set((s) => ({ recents: s.recents.filter((id) => id !== stationId) })),
       sound: false,
       setSound: (sound) => set({ sound }),
+      alerts: false,
+      setAlerts: (alerts) => set({ alerts }),
+      notice: null,
+      setNotice: (notice) => set({ notice }),
+      track: { status: "off", lastFixAt: null, accuracyM: null },
       addTrailPoint: (p) => set((s) => ({ trail: [...s.trail, p].slice(-TRAIL_CAP) })),
       clearTrail: () => set({ trail: [] }),
       dismissCelebration: () => set((s) => ({ celebrations: s.celebrations.slice(1) })),
@@ -240,7 +255,7 @@ export const useStore = create<State>()(
           return set({ journey: { ...j, stage: "complete" } });
         }
         const next = NEXT[j.stage];
-        if (next) set({ journey: { ...j, stage: next } });
+        if (next) set({ journey: { ...j, stage: next, ...(next === "traveling" ? { boardedAt: now } : {}) } });
       },
 
       endJourney: () => set({ journey: null }),
@@ -251,7 +266,7 @@ export const useStore = create<State>()(
       // Reveal queue, GPS fix and panel state are per-session and never persisted.
       partialize: (s) => ({
         events: s.events, xp: s.xp, achievements: s.achievements, challenges: s.challenges, name: s.name,
-        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents, trail: s.trail, sound: s.sound,
+        guestId: s.guestId, onboarded: s.onboarded, demo: s.demo, saved: s.saved, journey: s.journey, ai: s.ai, tipsSeen: s.tipsSeen, tipsOff: s.tipsOff, home: s.home, work: s.work, recents: s.recents, trail: s.trail, sound: s.sound, alerts: s.alerts,
       }),
     },
   ),

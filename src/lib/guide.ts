@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 18;
+export const GUIDE_VERSION = 19;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -56,6 +56,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "route-summary", title: "Step by step", body: "Every move in order: walk, which train to board and its direction, where to get off, and each change. Directions are the MBTA’s own." },
     { target: "fare-summary", title: "What it costs, how to pay", body: "The fare is MBTA's published price, with the ways to pay that this service accepts. Open it for the breakdown." },
     { target: "tracking-mode", title: "Automatic or manual", body: "Automatic follows your live location and moves the journey on for you. Manual lets you confirm each step yourself. You can switch at any time." },
+    { target: "getoff-alerts", title: "Get-off alerts", body: "Bostie warns you when your stop is next. Turn the switch on to get the warning as a phone notification when Bostie is in the background." },
     { target: "journey-action", title: "One button moves you on", body: "Each stage has a single action. Tap “Start journey” when you are ready." },
   ],
   "journey-wait": [
@@ -67,6 +68,7 @@ export const TOUR: Record<Scene, Spot[]> = {
   "journey-ride": [
     { target: "strip-map", title: "Your ride, stop by stop", body: "There is no GPS underground, so you confirm each stop as the doors open. Every station you reach is stamped into your passport." },
     { target: "journey-action", title: "Confirm the stop", body: "Tap this each time the train arrives at the station shown." },
+    { target: "play-while-riding", title: "Play on the train", body: "The three games are here while you ride. Your get-off alert still reaches you inside a game." },
   ],
   "journey-explore": [
     { target: "nearby-list", title: "History within walking distance", body: "Landmarks near your stop. Tap a camera button to scan one and unlock its stamp." },

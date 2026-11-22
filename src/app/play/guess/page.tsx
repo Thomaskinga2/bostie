@@ -22,7 +22,7 @@ const CityMap = dynamic(() => import("@/components/map/CityMap").then((m) => m.C
 });
 
 /** How one question went. `picked` is the chosen name, or null when it was answered with a pin. */
-type Answer = { picked: string | null; correct: boolean; points: number; hint: boolean; km?: number };
+type Answer = { picked: string | null; correct: boolean; points: number; hint: boolean; km?: number; pin?: LatLng };
 type Round = { questions: Question[]; answers: Answer[] };
 const firstSentence = (s: string) => s.split(/(?<=\.)\s/)[0];
 
@@ -45,6 +45,18 @@ export default function GuessPage() {
   const done = !!round && earned !== null;
   const pinMarkers = useMemo<MapMarker[]>(() => (pin ? [{ id: "pin", kind: "pin", label: "Your pin", ...pin }] : []), [pin]);
 
+  /** After a pin answer: the player's pin, the real spot and the gap between them. */
+  const pinned = answered?.pin;
+  const missMap = useMemo(() => {
+    if (!pinned || !q) return null;
+    const spot = { lat: PLACE[q.id].lat, lng: PLACE[q.id].lng };
+    return {
+      markers: [{ id: "pin", kind: "pin", label: "Your pin", ...pinned }, { id: "answer", kind: "answer", label: q.answer, ...spot }] as MapMarker[],
+      lines: [{ id: "miss", color: "#1d2320", path: [pinned, spot], emphasis: true }],
+      fit: [pinned, spot],
+    };
+  }, [pinned, q]);
+
   const start = () => {
     setRound({ questions: guessRound(lastSeen), answers: [] });
     setI(0);
@@ -66,7 +78,7 @@ export default function GuessPage() {
     if (!q || !pin) return;
     const km = distanceKm(pin, PLACE[q.id]);
     const s = scoreMap(km);
-    record({ picked: null, correct: s.correct, points: hint ? Math.round(s.points / 2) : s.points, hint: !!hint, km });
+    record({ picked: null, correct: s.correct, points: hint ? Math.round(s.points / 2) : s.points, hint: !!hint, km, pin });
   };
 
   const next = () => {
@@ -198,6 +210,12 @@ export default function GuessPage() {
             <Lightbulb size={17} className="mt-0.5 shrink-0" aria-hidden />
             <span>{hint.text ?? "Thinking of a clue…"}{hint.source === "offline" && <span className="block text-[12px] opacity-70">From Bostie&apos;s notes</span>}</span>
           </p>
+        )}
+
+        {missMap && (
+          <div className="relative mt-3 h-[220px] overflow-hidden rounded-3xl border border-line" data-testid="pin-map">
+            <CityMap className="size-full" {...missMap} selectedId="answer" />
+          </div>
         )}
 
         {pinning && !answered ? (

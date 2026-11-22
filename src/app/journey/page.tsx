@@ -1,5 +1,5 @@
 "use client";
-import { Bus, Camera, Check, ChevronLeft, CreditCard, ExternalLink, Footprints, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
+import { BellRing, Bus, Camera, Check, ChevronLeft, CreditCard, ExternalLink, Footprints, Hand, LocateFixed, Repeat, ShieldCheck, TrainFront } from "lucide-react";
 import type { MapLine, MapMarker } from "@/components/map/CityMap";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -10,6 +10,7 @@ import { FareSummary } from "@/components/FareSummary";
 import { GameList } from "@/components/GameList";
 import { Button, cx, Empty, LineDots, LinePill, SourceBadge, StationSign } from "@/components/ui";
 import { derive, STAMP } from "@/lib/gamification";
+import { alertsSupported, enableAlerts } from "@/lib/alerts";
 import { useNow, useTransitRoutes } from "@/lib/api";
 import type { TransitRoute } from "@/lib/contracts";
 import { formatFare, journeyFare, quoteFare, type FareSegment } from "@/lib/fares";
@@ -375,6 +376,45 @@ function TrackingChoice({ journey }: { journey: Journey }) {
   );
 }
 
+/** Get-off alerts: a warning when the stop to get off at is next, in the app and as a phone notification. */
+function AlertChoice() {
+  const on = useStore((s) => s.alerts);
+  const setAlerts = useStore((s) => s.setAlerts);
+  const [problem, setProblem] = useState<"blocked" | "unsupported" | null>(null);
+  const toggle = async () => {
+    if (on) return setAlerts(false);
+    const result = await enableAlerts();
+    setProblem(result === "on" ? null : result);
+  };
+  return (
+    <section data-tour="getoff-alerts" aria-labelledby="alerts-h" className="mt-5 rounded-2xl border border-line bg-card p-3.5">
+      <div className="flex items-start gap-3.5">
+        <BellRing size={22} className={cx("mt-0.5 shrink-0", on ? "text-forest" : "text-ink-faint")} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <h2 id="alerts-h" className="text-[16.5px] font-bold">Get-off alerts</h2>
+          <p className="text-[13.5px] leading-snug text-ink-soft">
+            Bostie warns you when your stop is next and again when to get off. Works in Automatic and Manual mode.
+          </p>
+        </div>
+        <button role="switch" aria-checked={on} aria-label="Phone notifications for get-off alerts" onClick={toggle} className={cx("relative mt-0.5 h-8 w-[52px] shrink-0 rounded-full transition-colors", on ? "bg-forest" : "bg-line")}>
+          <span className={cx("absolute top-1 size-6 rounded-full bg-white shadow transition-[left]", on ? "left-[24px]" : "left-1")} />
+        </button>
+      </div>
+      <p className="mt-2 text-[12.5px] leading-snug text-ink-faint" aria-live="polite">
+        {problem === "blocked"
+          ? "Notifications are blocked for this site, so alerts show inside Bostie only. Allow them in your browser settings to get them on your lock screen."
+          : problem === "unsupported"
+            ? "This browser cannot send notifications, so alerts show inside Bostie only. On an iPhone, add Bostie to your Home Screen first."
+            : on
+              ? "On: you get a phone notification when Bostie is in the background. Keep Bostie open in a tab; if the phone closes it, no alert can be sent. In Manual mode with the app closed, the timing is an estimate."
+              : alertsSupported()
+                ? "Off: alerts still show inside Bostie. Turn on to get them as phone notifications too."
+                : "Alerts show inside Bostie. This browser cannot send phone notifications."}
+      </p>
+    </section>
+  );
+}
+
 /** What the tracker is doing right now, and a one-tap way to switch modes mid-journey. */
 function TrackingStatus({ journey }: { journey: Journey }) {
   const setTracking = useStore((s) => s.setTracking);
@@ -496,6 +536,7 @@ export default function JourneyPage() {
             </p>
             <FareSummary plan={plan} className="mt-4" />
             <TrackingChoice journey={journey} />
+            <AlertChoice />
             <StationSign id={plan.from} className="mt-5" />
             <Arrivals stationId={plan.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
           </>
@@ -523,7 +564,7 @@ export default function JourneyPage() {
           <>
             <StationSign id={leg.from} />
             <Arrivals stationId={leg.from} demo={demo} leg={leg} limit={3} className="mt-3 px-1" />
-            <GameList className="mt-5" />
+            <div data-tour="play-while-waiting"><GameList className="mt-5" /></div>
             <p className="mt-3 flex items-start gap-2.5 text-[13.5px] text-ink-soft">
               <ShieldCheck size={17} className="mt-0.5 shrink-0" aria-hidden /> Stand behind the yellow line until the train has stopped.
             </p>
@@ -544,6 +585,8 @@ export default function JourneyPage() {
             />
           </div>
         )}
+
+        {(stage === "boarding" || stage === "traveling") && <div data-tour="play-while-riding"><GameList riding className="mt-5" /></div>}
 
         {stage === "transferring" && nextLeg && <Arrivals stationId={nextLeg.from} demo={demo} leg={nextLeg} limit={3} className="mt-4 px-1" />}
 

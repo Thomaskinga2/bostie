@@ -16,6 +16,7 @@ import { bestStationFor, legInfo, planFromStops, planRoute, routeOptions, serves
 import { PLACE } from "../src/lib/places";
 import { dayRecap, heatPoints, trailSegments } from "../src/lib/recap";
 import type { Journey } from "../src/lib/store";
+import { estimateAlert, getOffAlert } from "../src/lib/alerts";
 import { autoSteps } from "../src/lib/tracking";
 
 const DAY = 86_400_000;
@@ -523,5 +524,40 @@ test.describe("directions and trains for a leg", () => {
     expect(planFromStops([{ from: { lat: 42.40, lng: -71.20 }, to: pt("place-pktrm") }])).toBeNull(); // a bus stop
     expect(planFromStops([{ from: pt("place-harsq"), to: pt("place-kencl") }])).toBeNull(); // no single line links them
     expect(planFromStops([{ from: pt("place-harsq"), to: pt("place-pktrm") }, { from: pt("place-kencl"), to: pt("place-hymnl") }])).toBeNull(); // rides do not connect
+  });
+});
+
+test.describe("get-off alerts", () => {
+  const plan = planRoute("place-harsq", "place-aqucl")!; // Red, then Orange, then Blue
+  const j = (over: Partial<Journey>): Journey => ({ id: "j", plan, demo: false, stage: "traveling", leg: 0, stop: 1, startedAt: 0, ...over });
+  const lastStop = plan.legs[0].stops.length - 1;
+
+  test("the rider is warned when their stop is next, and again on arriving, once each", () => {
+    expect(getOffAlert(j({ stop: 1 }), j({ stop: 2 }))).toBeNull(); // still stops to go
+    const next = getOffAlert(j({ stop: lastStop - 1 }), j({ stop: lastStop }))!;
+    expect(next.title).toBe("Next stop: Downtown Crossing");
+    expect(next.body).toContain("to change to the Orange Line");
+    expect(getOffAlert(j({ stop: lastStop }), j({ stop: lastStop }))).toBeNull(); // nothing moved: not repeated
+    const here = getOffAlert(j({ stop: lastStop }), j({ stage: "transferring", stop: lastStop }))!;
+    expect(here.title).toBe("This is Downtown Crossing");
+    expect(here.tag).not.toBe(next.tag);
+  });
+
+  test("a one-stop ride warns as soon as the rider is on board, and the last leg says nothing about changing", () => {
+    const short = planRoute("place-harsq", "place-cntsq")!;
+    const a = getOffAlert({ ...j({ stage: "boarding" }), plan: short }, { ...j({ stage: "traveling", stop: 1 }), plan: short })!;
+    expect(a).toMatchObject({ title: "Next stop: Central", body: "Get ready to get off." });
+    expect(getOffAlert(j({ stage: "waiting" }), j({ stage: "boarding" }))).toBeNull();
+    expect(getOffAlert(j({ id: "old" }), j({ id: "new", stop: lastStop }))).toBeNull(); // a different journey is not a step
+  });
+
+  test("with no position to go on, the warning is timed from when the rider boarded", () => {
+    const boardedAt = 1_000_000;
+    const due = estimateAlert(j({ boardedAt }))!;
+    expect(due.at).toBe(boardedAt + (plan.legs[0].minutes - 1) * 60_000); // one minute before the estimated arrival
+    expect(due.title).toBe("Almost at Downtown Crossing");
+    expect(due.body).toMatch(/By the timetable/); // says it is an estimate
+    expect(estimateAlert(j({}))).toBeNull(); // never boarded
+    expect(estimateAlert(j({ boardedAt, stage: "waiting" }))).toBeNull();
   });
 });
