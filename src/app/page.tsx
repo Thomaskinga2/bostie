@@ -8,7 +8,8 @@ import { Sheet } from "@/components/Sheet";
 import { GuideButton } from "@/components/shell/Tour";
 import { Logo } from "@/components/shell/Welcome";
 import { StampArt } from "@/components/Stamp";
-import { Button, cx, Photo, shortDate, StationSign } from "@/components/ui";
+import { Button, cx, shortDate, StationSign } from "@/components/ui";
+import { ZoomPhoto } from "@/components/Lightbox";
 import { derive, levelFor, STAMP, totalXp } from "@/lib/gamification";
 import { distanceKm, formatDistance, walkMinutes, type LatLng } from "@/lib/geo";
 import { LINES, nearestStation, STATION, STATIONS, type LineId, type Station } from "@/lib/network";
@@ -288,7 +289,7 @@ export default function HomeMap() {
                 Historic landmark in {place.neighborhood}
                 {place.year ? `, ${place.year}` : ""}
               </p>
-              <Photo id={place.id} alt={place.name} className="mt-3 h-44 rounded-2xl" />
+              <ZoomPhoto id={place.id} alt={place.name} className="mt-3 h-44 rounded-2xl" />
               <p className="mt-3 text-[15px] leading-relaxed">{place.summary}</p>
               <dl className="mt-3">
                 <Fact label="Status">{found ? `Verified ${shortDate(found.at)}` : "Not discovered yet"}</Fact>

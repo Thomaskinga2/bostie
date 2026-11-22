@@ -1121,6 +1121,12 @@ test("My day: today's places, the heat map, sharing the day and clearing locatio
   const sheet = page.getByRole("dialog", { name: "Share my day" });
   await expect(sheet.getByText(/exact route you travelled/)).toBeVisible(); // the rider is told the route is in the picture
   await expect(sheet.getByRole("img", { name: /Preview/ })).toBeVisible();
+  // The small preview opens full screen; Escape closes the picture, not the sheet under it.
+  await sheet.getByRole("button", { name: "Expand photo" }).click();
+  await expect(page.getByTestId("lightbox").getByRole("img", { name: /Preview/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("lightbox")).toBeHidden();
+  await expect(sheet).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent("download"), sheet.getByRole("button", { name: "Save image" }).click()]);
   await download.saveAs(keep("share-day.png"));
   await sheet.getByRole("button", { name: "Close" }).click();
@@ -1758,4 +1764,24 @@ test("the walking parts of a journey have a Directions button that leads to the 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Walk to Museum of Fine Arts" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Directions to Museum of Fine Arts" })).toHaveAttribute("href", /destination=42\.3394573,-71\.093897&travelmode=walking/);
+});
+
+test("a large photo opens full screen and closes again", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/play/guess");
+  await page.getByRole("button", { name: "Start round" }).click();
+  const viewer = page.getByTestId("lightbox");
+  await expect(viewer).toBeHidden();
+  await page.getByRole("button", { name: "Expand photo" }).click();
+  await expect(viewer.getByRole("img", { name: "Mystery place in Boston" })).toBeVisible(); // the name is not given away
+  await shot(page, "photo-full-screen");
+  await viewer.getByRole("button", { name: "Close photo" }).click();
+  await expect(viewer).toBeHidden();
+  // Tapping the picture itself closes it too, and the round is still there to answer.
+  await page.getByRole("button", { name: "Expand photo" }).click();
+  await viewer.getByRole("img").click();
+  await expect(viewer).toBeHidden();
+  await answer(page, true);
+  await expect(page.getByTestId("bostie")).toHaveAttribute("data-mood", "cheer");
 });

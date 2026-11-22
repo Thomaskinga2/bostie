@@ -5,7 +5,8 @@ import { Eraser, Pencil, Redo2, Trash2, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bostie, GameHeader, XpNote } from "@/components/games/GameChrome";
-import { Button, cx, Photo } from "@/components/ui";
+import { Button, cx } from "@/components/ui";
+import { ZoomImage, ZoomPhoto } from "@/components/Lightbox";
 import { ApiError, post, useNow } from "@/lib/api";
 import type { DrawResponse } from "@/lib/contracts";
 import { nextSubject, paidPlaysLeft, playEvent, type Subject } from "@/lib/game";
@@ -194,13 +195,12 @@ export default function DrawPage() {
 
           <div data-tour="draw-compare" className="mt-4 grid grid-cols-2 gap-3">
             <figure>
-              {/* eslint-disable-next-line @next/next/no-img-element -- the player's own drawing, held in memory */}
-              <img src={picture} alt={`Your drawing of ${subject.name}`} className="aspect-square w-full rounded-2xl border border-line bg-white object-cover" />
+              <ZoomImage src={picture} alt={`Your drawing of ${subject.name}`} className="aspect-square w-full rounded-2xl border border-line bg-white" />
               <figcaption className="mt-1 text-center text-[12.5px] text-ink-soft">Your drawing</figcaption>
             </figure>
             <figure>
               {subject.photo ? (
-                <Photo id={subject.photo} className="aspect-square w-full rounded-2xl" alt={subject.name} />
+                <ZoomPhoto id={subject.photo} className="aspect-square w-full rounded-2xl" alt={subject.name} />
               ) : (
                 <div className="grid aspect-square w-full place-items-center rounded-2xl border border-dashed border-line px-3 text-center text-[13px] text-ink-soft">No reference photo for this one.</div>
               )}
@@ -237,7 +237,7 @@ export default function DrawPage() {
         {/* Something to look at while drawing: the photo, or for symbols the things to include. */}
         <div data-tour="draw-reference">
         {subject.photo ? (
-          <Photo id={subject.photo} className="mt-2 h-[116px] rounded-2xl" alt={`Reference photo: ${subject.name}`} />
+          <ZoomPhoto id={subject.photo} className="mt-2 h-[116px] rounded-2xl" alt={`Reference photo: ${subject.name}`} />
         ) : (
           <p className="mt-2 rounded-2xl bg-sand px-3.5 py-2.5 text-[13.5px] leading-snug text-ink-soft" data-testid="draw-cues">
             <strong className="text-ink">No photo for this one. Try to include:</strong> {subject.cues.join(", ")}.

@@ -9,6 +9,7 @@ import { Sheet } from "@/components/Sheet";
 import { StampArt } from "@/components/Stamp";
 import { StationSelect } from "@/components/StationSelect";
 import { Button, cx, Empty, LineDots, PageHeader, Photo } from "@/components/ui";
+import { ZoomPhoto } from "@/components/Lightbox";
 import { COST_LABEL, INTERESTS, type Interest } from "@/data/discover";
 import { recommend, type Pick } from "@/lib/discover";
 import { formatFare } from "@/lib/fares";
@@ -186,7 +187,7 @@ export default function DiscoverPage() {
       <Sheet open={!!open} onClose={() => setOpenId(null)} title={open?.place.name} tall>
         {open && (
           <>
-            <Photo id={open.place.id} className="h-[180px] rounded-2xl" alt={open.place.name} />
+            <ZoomPhoto id={open.place.id} className="h-[180px] rounded-2xl" alt={open.place.name} />
             <p className="mt-3 text-[13.5px] font-semibold text-ink-soft">
               {open.place.neighborhood}{open.place.year ? `, ${open.place.year}` : ""}. {COST_LABEL[open.cost]} (estimate).
             </p>

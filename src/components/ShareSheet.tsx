@@ -3,6 +3,7 @@
 import { Download, Share2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { canShareFiles, saveImage, shareImage } from "@/lib/share";
+import { ZoomImage } from "./Lightbox";
 import { Sheet } from "./Sheet";
 import { Button } from "./ui";
 
@@ -58,8 +59,7 @@ export function ShareSheet({ open, onClose, title, make, caption, filename, warn
     <Sheet open={open} onClose={onClose} title={title} tall>
       <div className="mx-auto w-[min(62%,250px)] overflow-hidden rounded-3xl bg-ink shadow-lift" style={{ aspectRatio: "9 / 16" }}>
         {ready ? (
-          // eslint-disable-next-line @next/next/no-img-element -- generated locally
-          <img src={ready.url} alt="Preview of the picture you are about to share" className="size-full object-cover" />
+          <ZoomImage src={ready.url} alt="Preview of the picture you are about to share" className="size-full" />
         ) : made === "failed" ? (
           <p className="grid h-full place-items-center px-5 text-center text-[14px] text-paper/80">The picture could not be made. Please try again.</p>
         ) : (

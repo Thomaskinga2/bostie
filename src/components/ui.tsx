@@ -1,6 +1,6 @@
 "use client";
 import {
-  Camera, Eye, Flame, Gamepad2, Landmark, MapPin, Medal, Route, Shuffle, Sun, TrainFront, Trophy, type LucideIcon,
+  Camera, Eye, Flame, Gamepad2, Landmark, MapPin, Maximize2, Medal, Route, Shuffle, Sun, TrainFront, Trophy, type LucideIcon,
 } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { LINES, lineOf, STATION, type LineId } from "@/lib/network";
@@ -104,13 +104,26 @@ export function Meter({ value, className, color }: { value: number; className?: 
 }
 
 /** A licensed Wikimedia Commons photo with its attribution. */
-export function Photo({ id, className, credit = true, alt = "" }: { id: string; className?: string; credit?: boolean; alt?: string }) {
+/** Covers a picture and opens it full screen. A sibling of the picture, so the picture keeps its own description. */
+export function ExpandButton({ onClick, small }: { onClick: () => void; small?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="Expand photo" className="absolute inset-0 cursor-zoom-in">
+      <span aria-hidden className={cx("absolute grid place-items-center rounded-full bg-ink/55 text-white", small ? "right-1 top-1 size-6" : "right-2 top-2 size-8")}>
+        <Maximize2 size={small ? 12 : 15} />
+      </span>
+    </button>
+  );
+}
+
+/** `onExpand` makes the photo tappable; see ZoomPhoto in Lightbox.tsx. */
+export function Photo({ id, className, credit = true, alt = "", onExpand }: { id: string; className?: string; credit?: boolean; alt?: string; onExpand?: () => void }) {
   const p = photoOf(id);
   if (!p) return <div className={cx("bg-sand", className)} />;
   return (
     <div className={cx("relative overflow-hidden bg-sand", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element -- hot-linked Commons thumbnails, already sized */}
       <img src={p.src} alt={alt} loading="lazy" decoding="async" draggable={false} className="size-full object-cover" />
+      {onExpand && <ExpandButton onClick={onExpand} />}
       {credit && (
         <a
           href={p.source}

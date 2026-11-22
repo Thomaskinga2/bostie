@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Sheet } from "@/components/Sheet";
 import { StampArt } from "@/components/Stamp";
-import { Button, cx, Empty, LineDots, Meter, Photo, shortDate } from "@/components/ui";
+import { Button, cx, Empty, LineDots, Meter, shortDate } from "@/components/ui";
+import { ZoomPhoto } from "@/components/Lightbox";
 import { STAMP, STAMPS, type Derived, type Stamp } from "@/lib/gamification";
 import { LINES, MAIN_LINES, STATION, type LineId } from "@/lib/network";
 import { PLACE } from "@/lib/places";
@@ -89,7 +90,7 @@ function StampDetail({ stamp, d, onClose }: { stamp: Stamp; d: Derived; onClose:
 
       {place && (
         <div className="mt-5">
-          <Photo id={place.id} alt={place.name} className="h-44 rounded-2xl" />
+          <ZoomPhoto id={place.id} alt={place.name} className="h-44 rounded-2xl" />
           <p className="mt-3 text-[15px] leading-relaxed text-ink">{place.summary}</p>
         </div>
       )}

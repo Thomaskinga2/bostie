@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bostie, GameHeader, XpNote, type Mood } from "@/components/games/GameChrome";
 import type { MapMarker } from "@/components/map/CityMap";
 import { Button, cx, Photo } from "@/components/ui";
+import { ZoomPhoto } from "@/components/Lightbox";
 import { post, useNow } from "@/lib/api";
 import type { HintResponse } from "@/lib/contracts";
 import { guessRound, paidPlaysLeft, PIN_CORRECT_KM, playEvent, POINTS, ROUND_LENGTH, scoreMap, type Question } from "@/lib/game";
@@ -197,7 +198,7 @@ export default function GuessPage() {
       <GameHeader title="Bostie Guessing" progress={`${i + 1} of ${ROUND_LENGTH}`} onExit={() => setRound(null)} exitLabel="Quit" />
       <div className="scroll-area min-h-0 flex-1 px-5 pb-4 pt-2">
         <div data-tour="round-photo">
-          <Photo id={q.id} credit={!!answered} className="h-[210px] rounded-3xl" alt={answered ? q.answer : "Mystery place in Boston"} />
+          <ZoomPhoto id={q.id} credit={!!answered} className="h-[210px] rounded-3xl" alt={answered ? q.answer : "Mystery place in Boston"} />
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand" role="progressbar" aria-label="Round progress" aria-valuemin={0} aria-valuemax={ROUND_LENGTH} aria-valuenow={round.answers.length}>
           <div className="h-full rounded-full bg-forest transition-[width] duration-500" style={{ width: `${(round.answers.length / ROUND_LENGTH) * 100}%` }} />

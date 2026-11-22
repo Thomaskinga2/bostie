@@ -7,6 +7,7 @@ import { ShareSheet } from "@/components/ShareSheet";
 import { GeminiChip } from "@/components/shell/Showcase";
 import { StampArt } from "@/components/Stamp";
 import { Button, cx, SourceBadge } from "@/components/ui";
+import { ZoomImage } from "@/components/Lightbox";
 import { ApiError, post, toJpegBase64 } from "@/lib/api";
 import { landmarkCard } from "@/lib/share";
 import type { ScanResponse } from "@/lib/contracts";
@@ -115,8 +116,7 @@ export default function ScanPage() {
     return (
       <div data-scene="scan-result" className="scroll-area h-full px-5 pb-8 pt-4">
         <div className="flex items-start gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element -- local data URL preview */}
-          <img src={phase.preview} alt="Your photo" className="size-[92px] shrink-0 rounded-2xl object-cover" />
+          <ZoomImage src={phase.preview} alt="Your photo" small className="size-[92px] shrink-0 rounded-2xl" />
           <div className="min-w-0">
             <p className={cx("text-[14px] font-semibold", stamp ? "text-forest" : "text-ink-soft")}>{headline}</p>
             <h1 className="text-[26px] font-bold leading-[1.1]">{stamp ? stamp.name : res.result.landmarkName || "Try another photo"}</h1>

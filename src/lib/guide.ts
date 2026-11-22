@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 24;
+export const GUIDE_VERSION = 25;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -103,7 +103,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "start-round", title: "Start a round", body: "Five photos of Boston, four answers each. Tap “Start round” when you are ready." },
   ],
   "play-round": [
-    { target: "round-photo", title: "What is this?", body: "A real place in Boston: a landmark, a T station or a neighborhood." },
+    { target: "round-photo", title: "What is this?", body: "A real place in Boston: a landmark, a T station or a neighborhood. Tap the photo to see it full screen." },
     { target: "guess-input", title: "Pick one", body: "Four answers and one try. Code checks the answer, not AI." },
     { target: "round-tools", title: "Stuck?", body: "“Hint” removes two wrong answers and Gemini writes a clue, for half the points. “Pin it instead” lets you answer on the map." },
   ],
@@ -116,14 +116,14 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "draw-start", title: "Bostie Drawing", body: "Bostie names a landmark or a symbol and you sketch it. Gemini says how recognizable it is. Drawings are never saved." },
   ],
   "play-draw-canvas": [
-    { target: "draw-reference", title: "What to draw", body: "A photo to copy from. For symbols with no photo, a list of things to include." },
+    { target: "draw-reference", title: "What to draw", body: "A photo to copy from: tap it to see it full screen. For symbols with no photo, a list of things to include." },
     { target: "draw-canvas", title: "Your canvas", body: "Draw with a finger, a stylus or a mouse." },
     { target: "draw-tools", title: "Colours and tools", body: "Eight colours, pen and eraser, brush size, undo, redo and clear." },
     { target: "draw-submit", title: "Hand it in", body: "Gemini judges whether the subject is recognizable, not how artistic it is. An empty canvas is never sent." },
   ],
   "play-draw-result": [
     { target: "draw-score", title: "Bostie's opinion", body: "A score from 0 to 100, for fun. The XP comes from fixed score bands, not from the AI." },
-    { target: "draw-compare", title: "Yours beside the real thing", body: "Your sketch next to the reference photo, with what Bostie spotted and what you could add." },
+    { target: "draw-compare", title: "Yours beside the real thing", body: "Your sketch next to the reference photo, with what Bostie spotted and what you could add. Tap either picture to enlarge it." },
   ],
   "play-parkour": [
     { target: "parkour-levels", title: "Pick a difficulty", body: "Three, five, seven or ten obstacles. Each one asks a question about Boston." },

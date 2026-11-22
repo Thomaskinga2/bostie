@@ -362,7 +362,7 @@ export default function TripPlanPage() {
         <AnimatePresence>
           {open && (
             <div data-testid="trip-stop-detail">
-              <PlacePhoto place={open.stop} className="h-[170px] w-full rounded-2xl" />
+              <PlacePhoto place={open.stop} zoom className="h-[170px] w-full rounded-2xl" />
               <p className="mt-3 text-[14px] text-ink-soft">{[open.stop.category, priceText(open.stop), open.stop.rating ? `${open.stop.rating.toFixed(1)} stars on Google` : null].filter(Boolean).join(" · ")}</p>
               <p className="text-[14px] text-ink-soft">{open.stop.address}</p>
               {open.stop.summary && <p className="mt-2 text-[15.5px] leading-snug">{open.stop.summary}</p>}
