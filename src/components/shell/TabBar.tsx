@@ -1,14 +1,15 @@
 "use client";
-import { BookMarked, Compass, Map, TrainFront } from "lucide-react";
+import { BookMarked, Compass, Luggage, Map, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cx } from "../ui";
 
-// Four places. Scanning and Bostie's Favourite are optional quests, reached from Discover.
+// Five places. Scanning and Bostie's Favourite are optional quests, reached from Discover.
 const TABS = [
   { href: "/", label: "Map", Icon: Map, also: [] as string[] },
   { href: "/ride", label: "Ride", Icon: TrainFront, also: ["/journey"] },
   { href: "/discover", label: "Discover", Icon: Compass, also: ["/scan", "/play"] },
+  { href: "/trips", label: "Trips", Icon: Luggage, also: [] },
   { href: "/passport", label: "Passport", Icon: BookMarked, also: [] },
 ];
 
@@ -20,7 +21,7 @@ export function TabBar() {
       data-tour="tabs"
       className="relative z-30 shrink-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur framed:pb-[18px]"
     >
-      <ul className="flex h-[62px] items-stretch px-2">
+      <ul className="flex h-[62px] items-stretch px-1">
         {TABS.map(({ href, label, Icon, also }) => {
           const active = href === "/" ? pathname === "/" : [href, ...also].some((p) => pathname.startsWith(p));
           return (
@@ -30,7 +31,7 @@ export function TabBar() {
                 aria-current={active ? "page" : undefined}
                 className={cx("flex h-full flex-col items-center justify-center gap-1 text-[11.5px] font-semibold", active ? "text-forest" : "text-ink-faint")}
               >
-                <span className={cx("grid h-8 w-14 place-items-center rounded-full transition", active && "bg-moss")}>
+                <span className={cx("grid h-8 w-12 place-items-center rounded-full transition", active && "bg-moss")}>
                   <Icon size={22} strokeWidth={active ? 2.4 : 1.9} aria-hidden />
                 </span>
                 {label}

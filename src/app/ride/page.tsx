@@ -145,7 +145,6 @@ export default function RidePage() {
 
   const go = (toId: string) => {
     setNote("");
-    if (inProgress) return router.push("/journey");
     if (toId === from) return setNote(walkFrom ? `${STATION[toId].name} is the station nearest ${walkFrom.name}: a ${walkFrom.minutes} min walk, no train needed.` : `You are already at ${STATION[toId].name}. Tap the From field to start somewhere else.`);
     if (!startJourney(from, toId, undefined, walkFrom)) return setNote("No rail route found to that station.");
     router.push("/journey");
@@ -154,7 +153,6 @@ export default function RidePage() {
   /** An address or place was picked: ride to the best station for it, then walk. */
   const goPlace = (hit: PlaceHit) => {
     setNote("");
-    if (inProgress) return router.push("/journey");
     const best = bestStationFor(from, hit);
     if (!best) return setNote(`${hit.name} is not within walking distance of a subway station.`);
     if (!best.plan) return setNote(`${hit.name} is a ${best.walkMinutes} min walk from ${STATION[from].name}. No train needed.`);

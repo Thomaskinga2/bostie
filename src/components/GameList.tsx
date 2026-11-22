@@ -3,14 +3,15 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { GAMES } from "@/lib/game";
+import { rememberGameOrigin } from "@/lib/gameReturn";
 import { Photo } from "./ui";
 
-export function GameCards({ className }: { className?: string }) {
+export function GameCards({ className, fromJourney = false }: { className?: string; fromJourney?: boolean }) {
   return (
     <ul className={className} aria-label="Games">
       {GAMES.map((g) => (
         <li key={g.id} className="border-b border-line last:border-b-0">
-          <Link href={g.href} className="flex items-center gap-3.5 p-2.5 pr-3">
+          <Link href={g.href} onClick={() => rememberGameOrigin(fromJourney ? g.href : null)} className="flex items-center gap-3.5 p-2.5 pr-3">
             <span className="relative block size-[68px] shrink-0 overflow-hidden rounded-2xl bg-sand">
               <Photo id={g.photo} credit={false} className="size-full" />
             </span>
@@ -34,7 +35,7 @@ export function GameList({ className, riding = false }: { className?: string; ri
       <p className="text-[14px] text-ink-soft">
         Bostie&apos;s Favourite: three quick games about Boston.{riding ? " Bostie tells you when your stop is next, on any screen." : ""}
       </p>
-      <GameCards className="mt-2.5 overflow-hidden rounded-3xl border border-line bg-card" />
+      <GameCards fromJourney className="mt-2.5 overflow-hidden rounded-3xl border border-line bg-card" />
     </section>
   );
 }

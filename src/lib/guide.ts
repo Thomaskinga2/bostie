@@ -18,7 +18,7 @@
 //
 // Keep this file dependency-free: tests import it directly.
 
-export const GUIDE_VERSION = 20;
+export const GUIDE_VERSION = 21;
 
 export type Spot = {
   /** Matches data-tour on the element to highlight. */
@@ -30,7 +30,7 @@ export type Spot = {
 
 export type Scene =
   | "home" | "ride" | "discover" | "journey-plan" | "journey-wait" | "journey-ride" | "journey-explore"
-  | "play-lobby" | "play-intro" | "play-round" | "play-result" | "play-draw" | "play-parkour" | "scan" | "scan-result" | "passport";
+  | "play-lobby" | "play-intro" | "play-round" | "play-result" | "play-draw" | "play-parkour" | "trips" | "trip-plan" | "scan" | "scan-result" | "passport";
 
 export const TOUR: Record<Scene, Spot[]> = {
   home: [
@@ -38,7 +38,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "home-actions", title: "Two ways to start", body: "“Plan a ride” takes you between any two stations. “Explore Boston” finds places worth the trip." },
     { target: "map", title: "Your adventure map", body: "Coloured dots are stations on their lines. Gold diamonds are places to discover. Tap any of them." },
     { target: "level-chip", title: "Level and XP", body: "Rides, scans and game rounds all earn XP. Tap to open your passport." },
-    { target: "tabs", title: "Four places to go", body: "The map, ride planning, things to discover, and your passport of stamps." },
+    { target: "tabs", title: "Five places to go", body: "The map, ride planning, things to discover, trip planning, and your passport of stamps." },
   ],
   ride: [
     { target: "ride-search", title: "From and to", body: "Type a station, address or place in To, pick it from the list, then tap Start. Tap From to begin somewhere else, or choose Current location." },
@@ -78,6 +78,7 @@ export const TOUR: Record<Scene, Spot[]> = {
     { target: "game-modes", title: "Three games", body: "Guess a photo, draw a landmark, or keep Bostie running. All optional, and each pays XP for the first five plays a day." },
   ],
   "play-intro": [
+    { target: "journey-return", title: "Your journey is safe", body: "Playing never loses your trip. “Return to Journey” takes you back to the same stage in one tap." },
     { target: "start-round", title: "Start a round", body: "Five photos of Boston, four answers each. Tap “Start round” when you are ready." },
   ],
   "play-round": [
@@ -95,6 +96,15 @@ export const TOUR: Record<Scene, Spot[]> = {
   ],
   "play-parkour": [
     { target: "parkour-levels", title: "Pick a difficulty", body: "Three, five, seven or ten obstacles. Each one asks a question with six seconds to answer." },
+  ],
+  trips: [
+    { target: "trips-new", title: "Three ways to start a trip", body: "From a travel video or screenshot, planned for you by Gemini, or built by hand. Every place is checked on the map before it is added." },
+    { target: "trips-saved", title: "Saved trips", body: "Trips are kept on this device. Tap one to open it again." },
+  ],
+  "trip-plan": [
+    { target: "trip-map", title: "The day on the map", body: "Your stops in order, with the T lines and walks between them. Tap a pin to find its card." },
+    { target: "trip-tools", title: "Optimize and add", body: "“Optimize” puts the stops in the shortest order. “Add” searches for any place in Greater Boston." },
+    { target: "trip-list", title: "Your itinerary", body: "Drag the handle to reorder. Each stop shows when you arrive and whether it is open then; tap it for details." },
   ],
   scan: [
     { target: "viewfinder", title: "Point at a landmark", body: "The camera only turns on when you ask. Photos go to Gemini for recognition and are never stored." },

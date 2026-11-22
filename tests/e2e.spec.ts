@@ -28,7 +28,18 @@ const scanOk = (id = "state-house", name = "Massachusetts State House") => ({
   meta: { ...META, feature: "Landmark recognition", modality: "image + text → JSON" },
 });
 
-type Mocks = Partial<Record<"scan" | "hint" | "draw" | "predictions" | "alerts" | "places" | "routes", (route: Route) => unknown>>;
+type Mocks = Partial<Record<"scan" | "hint" | "draw" | "tripPlaces" | "tripImport" | "tripGenerate" | "predictions" | "alerts" | "places" | "routes", (route: Route) => unknown>>;
+
+/** Stand-in for verified places in Trips. Monday to Sunday 10 to 5 unless noted. */
+const open10to5 = { week: ["Monday: 10:00 AM to 5:00 PM"], periods: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, open: 600, close: 1020 })) };
+const tripPlace = (name: string, lat: number, lng: number, over: object = {}) => ({ id: `g:${name}`, name, address: `${name} address, Boston`, lat, lng, category: "Museum", rating: 4.6, priceLevel: 2, priceRange: { low: 20, high: 30 }, hours: open10to5, photo: null, summary: `${name} summary.`, provider: "google", ...over });
+const TRIP_PLACES = [
+  tripPlace("MOCK MFA", 42.3394, -71.094),
+  tripPlace("MOCK Fenway Park", 42.3467, -71.0972, { category: "Stadium", hours: { week: ["Opens 8:00 PM"], periods: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, open: 1200, close: 1380 })) } }),
+  tripPlace("MOCK Harvard Art Museums", 42.3742, -71.1144),
+  tripPlace("MOCK Tatte Bakery", 42.3601, -71.0655, { category: "Bakery", priceRange: null, priceLevel: 1, hours: null }),
+];
+const stopOf = (name: string, why: string) => ({ ...TRIP_PLACES.find((p) => p.name === name)!, why, minutes: 60 });
 
 /** Stand-in location search: knows two real Boston places, nothing else. */
 const PLACE_HITS = [
@@ -56,6 +67,17 @@ async function mockApis(page: Page, over: Mocks = {}) {
   }));
   await page.route("**/api/scan", over.scan ?? json(scanOk()));
   await page.route("**/api/game/hint", over.hint ?? json({ hint: "It overlooks the oldest public park in America.", angle: "geography", source: "gemini", output: {}, meta: META }));
+  await page.route("**/api/trips/photo**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: PNG }));
+  await page.route("**/api/trips/places**", over.tripPlaces ?? ((route) => {
+    const q = (new URL(route.request().url()).searchParams.get("q") ?? "").toLowerCase();
+    return route.fulfill({ json: { provider: "google", places: TRIP_PLACES.filter((p) => p.name.toLowerCase().includes(q)) } });
+  }));
+  await page.route("**/api/trips/generate", over.tripGenerate ?? json({ title: "History and a ball game", days: [[stopOf("MOCK MFA", "Art you will love."), stopOf("MOCK Fenway Park", "A ball game nearby.")], [stopOf("MOCK Harvard Art Museums", "A quieter second day.")]], skipped: [{ name: "Made-up Diner", reason: "Could not be found in Greater Boston" }], source: "gemini", meta: { ...META, feature: "Trips · itinerary generator" } }));
+  await page.route("**/api/trips/import", over.tripImport ?? ((route) => {
+    const body = route.request().postDataJSON() as { youtube?: string; images?: string[] };
+    if (body.youtube && !/youtu/.test(body.youtube)) return route.fulfill({ status: 422, json: { error: "link_unreadable", message: "Bostie can only open YouTube links. For TikTok or Instagram, upload the video or a screenshot instead." } });
+    return route.fulfill({ json: { summary: "A food and art day around Fenway.", found: [stopOf("MOCK MFA", "sign above the entrance"), stopOf("MOCK Fenway Park", "caption: Fenway Park"), stopOf("MOCK Tatte Bakery", "logo on the cup")], skipped: [{ name: "Eiffel Tower", reason: "Could not be found in Greater Boston" }], meta: { ...META, feature: "Trips · social-to-trip" } } });
+  }));
   await page.route("**/api/game/draw", over.draw ?? json({
     score: 82, recognizableFeatures: ["a round dome"], missingFeatures: ["the columns"], feedback: "MOCK FEEDBACK", source: "gemini", meta: { ...META, feature: "Bostie Drawing · sketch judge" },
   }));
@@ -215,6 +237,12 @@ test("the full judge demo: plan, ride, play, scan, passport", async ({ page }) =
   await shot(page, "06-round-result");
   expect((await store(page)).events.filter((e: { t: string }) => e.t === "play")).toMatchObject([{ game: "guess", score: 5, won: true, paid: true }]);
   // The hub and the other two games each introduce themselves.
+  // Trips: the home screen, then a trip being planned.
+  await page.goto("/trips");
+  await readTips();
+  await page.getByRole("button", { name: /Build it myself/ }).click();
+  await expect(page.getByRole("textbox", { name: "Trip name" })).toBeVisible();
+  await readTips();
   for (const [path, heading] of [["/play", "Bostie's Favourite"], ["/play/draw", "How to play"], ["/play/parkour", "How to play"]]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
@@ -590,7 +618,8 @@ test("navigation, layout and the device frame", async ({ page }, info) => {
   await seed(page);
   await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main" });
-  for (const [tab, heading] of [["Ride", "Plan a ride"], ["Discover", "Explore Boston"], ["Passport", "Stamps"], ["Map", null]] as const) {
+  await expect(nav.getByRole("link")).toHaveText(["Map", "Ride", "Discover", "Trips", "Passport"]);
+  for (const [tab, heading] of [["Ride", "Plan a ride"], ["Discover", "Explore Boston"], ["Trips", "Trips"], ["Passport", "Stamps"], ["Map", null]] as const) {
     await nav.getByRole("link", { name: tab, exact: true }).click();
     await expect(nav.getByRole("link", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
     if (heading) await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
@@ -1311,4 +1340,294 @@ test("get-off alerts in Automatic mode reach the rider inside a game, and stay i
   }).toPass({ timeout: 90_000 });
   await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible(); // still on the game screen
   expect(await notes(page)).toEqual([]); // blocked: nothing is sent outside the app
+});
+
+/** Harvard to Park Street in Manual mode, taken as far as the Wait stage. */
+async function waitingAtHarvard(page: Page) {
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await page.getByRole("button", { name: "Start journey" }).click();
+  await page.getByRole("button", { name: /I am at the station/ }).click();
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+}
+const journeyOf = async (page: Page) => (await store(page)).journey;
+
+test("leaving a journey for a game and coming back: same route, same stage, for all three games", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await waitingAtHarvard(page);
+  const before = await journeyOf(page);
+  const depth = await page.evaluate(() => history.length);
+
+  for (const game of ["Bostie Guessing", "Bostie Drawing", "Bostie Parkour"]) {
+    // Opened from the journey, each game says so and offers the way back.
+    await page.getByRole("region", { name: "Play while you wait" }).getByRole("link", { name: new RegExp(game) }).click();
+    await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible();
+    await expect(page.getByTestId("journey-banner")).toContainText("Journey active: Harvard → Park Street");
+    await page.getByRole("button", { name: "Journey", exact: true }).click(); // the game's own Back button
+    await expect(page).toHaveURL(/\/journey$/);
+    await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+    expect(await journeyOf(page)).toEqual(before); // nothing about the journey changed
+  }
+  // Three round trips left the browser history no deeper than one game visit.
+  expect(await page.evaluate(() => history.length)).toBeLessThanOrEqual(depth + 1);
+
+  // The browser's own Back button does the same.
+  await page.getByRole("region", { name: "Play while you wait" }).getByRole("link", { name: /Bostie Guessing/ }).click();
+  await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+});
+
+test("a refresh inside a game, XP earned in it, and fresh departures on return all leave the journey intact", async ({ page }) => {
+  let headsign = "Ashmont";
+  await mockApis(page, {
+    predictions: (route) => route.fulfill({ json: { source: "live", fetchedAt: new Date().toISOString(), stop: "place-harsq", predictions: [{ id: "p1", route: "Red", headsign, direction: 0, at: new Date(Date.now() + 4 * 60_000).toISOString(), status: null, platform: "Ashmont/Braintree", scheduled: false }] } }),
+  });
+  await seed(page, { demo: false });
+  await waitingAtHarvard(page);
+  await expect(page.getByTestId("departures").getByText("Ashmont", { exact: true })).toBeVisible();
+  const before = await journeyOf(page);
+
+  await page.getByRole("region", { name: "Play while you wait" }).getByRole("link", { name: /Bostie Guessing/ }).click();
+  await expect(page.getByRole("heading", { name: "How to play" })).toBeVisible();
+  await page.reload(); // the journey is saved on the device, not in the page
+  await expect(page.getByTestId("journey-banner")).toContainText("Harvard → Park Street");
+
+  // Play a whole round and earn XP.
+  await page.getByRole("button", { name: "Start round" }).click();
+  await expect(page.getByTestId("journey-banner")).toBeVisible(); // still there during play
+  for (const label of ["Next question", "Next question", "Next question", "Next question", "See results"]) {
+    await answer(page, true);
+    await page.getByRole("button", { name: label }).click();
+  }
+  await dismissRewards(page);
+  const earned = await xpTotal(page);
+  expect(earned).toBeGreaterThanOrEqual(25);
+  await page.getByRole("button", { name: "Play again" }).click(); // restarting a game does not touch the journey
+  expect(await journeyOf(page)).toEqual(before);
+
+  // Hiding the banner only hides it.
+  await page.getByRole("button", { name: "Hide journey banner" }).click();
+  await expect(page.getByTestId("journey-banner")).toHaveCount(0);
+  expect(await journeyOf(page)).toEqual(before);
+
+  // Meanwhile the trains changed. Back on the journey the departures are fetched again.
+  headsign = "Braintree";
+  await page.goto("/play");
+  await page.getByRole("button", { name: "Return to Journey" }).click();
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+  await expect(page.getByTestId("departures").getByText("Braintree", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("departures").getByText("Ashmont", { exact: true })).toHaveCount(0);
+  expect(await journeyOf(page)).toEqual(before);
+  expect(await xpTotal(page)).toBe(earned); // rewards kept too
+});
+
+test("games opened from the games screen go back there; ending a journey clears it; replacing one asks first", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  // No journey: no banner, and Back means the games screen.
+  await page.goto("/play");
+  await expect(page.getByTestId("journey-banner")).toHaveCount(0);
+  await page.getByRole("link", { name: /Bostie Drawing/ }).click();
+  await page.getByRole("link", { name: "Games", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Bostie's Favourite" })).toBeVisible();
+
+  // With a journey under way, a game opened from the games screen still goes back to the games screen…
+  await waitingAtHarvard(page);
+  await page.goto("/play");
+  await page.getByRole("link", { name: /Bostie Drawing/ }).click();
+  await expect(page.getByTestId("journey-banner")).toBeVisible(); // …but the way to the journey is one tap away
+  await page.getByRole("link", { name: "Games", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Bostie's Favourite" })).toBeVisible();
+
+  // Asking for another trip does not silently drop this one.
+  await page.goto("/ride");
+  await page.getByRole("combobox", { name: "Where to?" }).fill("kendall");
+  await page.getByRole("button", { name: "Go to Kendall/MIT" }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const ask = page.getByRole("dialog", { name: "Replace your current journey?" });
+  await expect(ask).toContainText("Harvard → Park Street");
+  await ask.getByRole("button", { name: "Keep my current journey" }).click();
+  await expect(page.getByRole("heading", { name: "Wait for the Red Line" })).toBeVisible();
+  expect((await journeyOf(page)).plan.to).toBe("place-pktrm");
+
+  await page.goto("/ride");
+  await page.getByRole("combobox", { name: "Where to?" }).fill("kendall");
+  await page.getByRole("button", { name: "Go to Kendall/MIT" }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await ask.getByRole("button", { name: "Start the new trip" }).click();
+  await expect(page.getByRole("heading", { name: "Harvard to Kendall/MIT" })).toBeVisible();
+
+  // Ending it clears it: no banner, and the next trip starts without a question.
+  await page.getByRole("button", { name: "End journey" }).click();
+  expect(await journeyOf(page)).toBeNull();
+  await page.goto("/play");
+  await expect(page.getByTestId("journey-banner")).toHaveCount(0);
+  await page.goto("/ride");
+  await page.getByRole("button", { name: "Go to Park Street" }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Harvard to Park Street" })).toBeVisible();
+});
+
+/** A stop's card in the itinerary (the map has a pin with the same name). */
+const card = (page: Page, name: string) => page.getByRole("list", { name: /Day \d stops/ }).getByRole("button", { name: new RegExp(`^\\d\\. ${name}`) });
+const tripsStore = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("bostie-trips-v1") ?? "{}").state);
+const stopNames = (page: Page) => page.getByRole("list", { name: /Day \d stops/ }).getByRole("button", { name: /^\d\. / }).evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+
+test("Trips by hand: add places, see travel and opening hours, reorder, optimize, overview, save and delete", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/trips");
+  await expect(page.getByText("No trips yet.")).toBeVisible();
+  await page.getByRole("button", { name: /Build it myself/ }).click();
+  await expect(page.getByText("An empty day")).toBeVisible();
+
+  const add = async (q: string, name: string) => {
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "Add a place" });
+    await sheet.getByRole("textbox", { name: "Search for a place" }).fill(q);
+    await sheet.getByRole("button", { name: `Add ${name}` }).click();
+    await expect(card(page, name)).toBeVisible();
+  };
+  await add("harvard", "MOCK Harvard Art Museums");
+  await add("fenway", "MOCK Fenway Park");
+  await add("mfa", "MOCK MFA");
+  expect(await stopNames(page)).toEqual(["1. MOCK Harvard Art Museums", "2. MOCK Fenway Park", "3. MOCK MFA"]);
+
+  // How to get there: the T where it is quicker, with the published fare, and a walk between neighbours.
+  const legs = page.getByTestId("trip-leg");
+  await expect(legs.nth(0)).toContainText(/Line.*: Park Street to Harvard/);
+  await expect(legs.nth(0)).toContainText("$2.40");
+  await expect(legs.nth(2)).toContainText(/min walk/);
+  // Opening hours against the planned arrival: the stadium opens at 8 PM.
+  await expect(card(page, "MOCK Harvard")).toContainText("Open then");
+  await expect(card(page, "MOCK Fenway")).toContainText("Closed then");
+  await expect(page.getByTestId("trip-day-summary")).toContainText(/3 stops, about \d+ h \d+ min, T fares \$\d/);
+  await shot(page, "31-trip-plan");
+
+  // Reorder from the stop's sheet, then change the visit length.
+  await card(page, "MOCK MFA").click();
+  const detail = page.getByTestId("trip-stop-detail");
+  await expect(detail.getByRole("list", { name: "Opening hours" })).toContainText("10:00 AM to 5:00 PM");
+  await expect(detail).toContainText("$20 to $30");
+  await shot(page, "32-trip-stop");
+  await detail.getByRole("button", { name: "Move earlier" }).click();
+  await detail.getByRole("button", { name: "Stay 15 minutes more" }).click();
+  await expect(detail).toContainText("stay 60 min");
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+  expect(await stopNames(page)).toEqual(["1. MOCK Harvard Art Museums", "2. MOCK MFA", "3. MOCK Fenway Park"]);
+
+  // Optimize: starting from Park Street, the two Fenway stops come before the trek to Harvard.
+  await page.getByRole("button", { name: "Optimize" }).click();
+  expect((await stopNames(page))!.at(-1)).toBe("3. MOCK Harvard Art Museums");
+
+  // Overview: totals, with the closed stop called out and the sources stated.
+  await page.getByRole("tab", { name: "Overview" }).click();
+  const overview = page.getByTestId("trip-overview");
+  await expect(overview).toContainText("Food and tickets");
+  await expect(overview).toContainText(/\$\d+ to \$\d+/);
+  await expect(overview).toContainText("published adult fares");
+  await shot(page, "33-trip-overview");
+
+  // A second day, and moving a stop into it.
+  await page.getByRole("button", { name: "Add a day" }).click();
+  await expect(page.getByText("An empty day")).toBeVisible();
+  await page.getByRole("tab", { name: "Day 1" }).click();
+  await page.getByRole("list", { name: /Day \d stops/ }).getByRole("button", { name: /^1\. MOCK/ }).click();
+  await detail.getByRole("button", { name: "Move to day 2" }).click();
+  await page.getByRole("tab", { name: "Day 2" }).click();
+  expect(await stopNames(page)).toHaveLength(1);
+
+  // Saved on the device: named, listed, still there after a reload, and deletable.
+  await page.getByRole("textbox", { name: "Trip name" }).fill("Fenway and Harvard");
+  await page.getByRole("link", { name: "Trips", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Open Fenway and Harvard" })).toContainText("2 days, 3 stops");
+  await page.reload();
+  await page.getByRole("button", { name: "Open Fenway and Harvard" }).click();
+  await expect(page.getByRole("tab", { name: "Day 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Delete this trip" }).click();
+  await expect(page.getByText("No trips yet.")).toBeVisible();
+  expect((await tripsStore(page)).trips).toEqual([]);
+  expect((await store(page)).xp).toEqual([]); // Trips does not touch XP or the Passport
+});
+
+test("Trips planned by Gemini: only verified places, in a sensible order, and a ride can be started from it", async ({ page }) => {
+  let sent: Record<string, unknown> = {};
+  await mockApis(page, {
+    tripGenerate: (route) => {
+      sent = route.request().postDataJSON();
+      return route.fulfill({ json: { title: "History and a ball game", days: [[stopOf("MOCK Harvard Art Museums", "A quiet start."), stopOf("MOCK MFA", "Art you will love."), stopOf("MOCK Fenway Park", "A ball game nearby.")]], skipped: [{ name: "Made-up Diner", reason: "Could not be found in Greater Boston" }], source: "gemini", meta: { ...META, feature: "Trips · itinerary generator" } } });
+    },
+  });
+  await seed(page);
+  await page.goto("/trips");
+  await page.getByRole("button", { name: /Plan it for me/ }).click();
+  await page.getByRole("button", { name: "Food" }).click();
+  await page.getByRole("radio", { name: "Medium" }).click();
+  await page.getByRole("radiogroup", { name: "Time each day" }).getByRole("radio", { name: "9 h" }).click();
+  await page.getByLabel(/Anything else/).fill("with kids");
+  await shot(page, "34-trip-generator");
+  await page.getByRole("button", { name: "Plan my trip" }).click();
+  await expect(page.getByRole("textbox", { name: "Trip name" })).toHaveValue("History and a ball game");
+  expect(sent).toMatchObject({ interests: ["history", "food"], budget: 2, days: 1, hours: 9, startStationId: "place-pktrm", note: "with kids" });
+  // Bostie orders the day itself: from Park Street, Fenway's two stops first.
+  expect((await stopNames(page))!.at(-1)).toBe("3. MOCK Harvard Art Museums");
+  await expect(page.getByText("Made-up Diner")).toHaveCount(0); // unverified names never appear
+  expect((await store(page)).ai[0].meta.feature).toBe("Trips · itinerary generator");
+
+  // The T leg becomes a normal guided journey to that stop.
+  await page.getByTestId("trip-leg").filter({ hasText: "Ride it" }).first().getByRole("button", { name: "Ride it" }).click();
+  await expect(page).toHaveURL(/\/journey$/);
+  await expect(page.getByRole("heading", { name: /to MOCK/ })).toBeVisible();
+});
+
+test("Trips when Gemini is down: Bostie's own rules plan the day, and say so; a total failure offers a retry", async ({ page }) => {
+  let mode: "rules" | "down" = "down";
+  await mockApis(page, {
+    tripGenerate: (route) => (mode === "down"
+      ? route.fulfill({ status: 502, json: { error: "generate_unavailable", message: "Bostie could not plan that trip just now. Try again, or build it yourself." } })
+      : route.fulfill({ json: { title: "A day from Park Street", days: [[{ ...stopOf("MOCK MFA", "Matches history."), provider: "catalogue" }]], skipped: [], source: "rules", meta: null } })),
+  });
+  await seed(page);
+  await page.goto("/trips");
+  await page.getByRole("button", { name: /Plan it for me/ }).click();
+  await page.getByRole("button", { name: "Plan my trip" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "could not plan that trip" })).toBeVisible();
+  mode = "rules";
+  await page.getByRole("button", { name: "Plan my trip" }).click();
+  await expect(page.getByRole("textbox", { name: "Trip name" })).toHaveValue(/picked by Bostie's rules/);
+});
+
+test("Social-to-Trip: a TikTok link is refused honestly, a YouTube link and a screenshot both become a trip", async ({ page }) => {
+  await mockApis(page);
+  await seed(page);
+  await page.goto("/trips");
+  await page.getByRole("button", { name: /From a video or screenshot/ }).click();
+  const box = page.getByTestId("trip-import");
+
+  await box.getByRole("textbox", { name: "Video link" }).fill("https://www.tiktok.com/@someone/video/123");
+  await box.getByRole("button", { name: "Find the places" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "upload the video or a screenshot instead" })).toBeVisible();
+
+  await box.getByRole("textbox", { name: "Video link" }).fill("https://youtu.be/abc123");
+  await box.getByRole("button", { name: "Find the places" }).click();
+  await expect(box.getByText("3 places found")).toBeVisible();
+  await expect(box.getByText("A food and art day around Fenway.")).toBeVisible();
+  await expect(box.getByRole("checkbox", { name: /MOCK MFA/ })).toContainText("Seen: sign above the entrance");
+  await expect(page.getByTestId("trip-skipped")).toContainText("Eiffel Tower"); // outside Greater Boston: named, not added
+  await shot(page, "35-trip-import");
+
+  // A screenshot goes the same way.
+  await box.getByRole("button", { name: "Try something else" }).click();
+  await box.getByRole("radio", { name: "Screenshots" }).click();
+  await box.getByLabel("Screenshot files").setInputFiles({ name: "post.png", mimeType: "image/png", buffer: PNG });
+  await expect(box.getByText("3 places found")).toBeVisible();
+
+  await box.getByRole("checkbox", { name: /MOCK Fenway Park/ }).click(); // leave one out
+  await box.getByRole("button", { name: "Make a trip from 2 places" }).click();
+  await expect(page).toHaveURL(/\/trips\/plan$/);
+  expect((await stopNames(page))!.map((n) => n!.replace(/^\d\. /, "")).sort()).toEqual(["MOCK MFA", "MOCK Tatte Bakery"]);
+  await expect(card(page, "MOCK Tatte Bakery")).toContainText("Hours not listed"); // no hours from Google: said, not guessed
+  expect((await tripsStore(page)).trips[0]).toMatchObject({ origin: "import" });
 });

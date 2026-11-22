@@ -31,6 +31,8 @@ export type Journey = {
   walkFrom?: WalkTo;
   /** When the rider got on the current train: the get-off estimate counts from here. */
   boardedAt?: number;
+  /** When the journey last changed (a step, a route choice, the tracking mode). */
+  updatedAt?: number;
   /** "auto" follows the rider's live location; "manual" waits for a tap at each step. */
   tracking?: "auto" | "manual";
 };
@@ -65,7 +67,12 @@ type State = Progress & {
   recents: string[];
   /** Where the phone has been, recorded in Automatic mode. Stays on this device: never synced. */
   trail: TrailPoint[];
+  /** The one active journey. Owned here, saved on the device, and never touched by the games. */
   journey: Journey | null;
+  /** A trip the rider asked for while another journey was under way: waits for their yes or no. */
+  pending: { from: string; to: string; walkTo?: WalkTo; walkFrom?: WalkTo } | null;
+  confirmReplace: () => void;
+  cancelReplace: () => void;
   geo: LatLng | null;
   geoStatus: "idle" | "asking" | "granted" | "denied" | "unavailable";
   celebrations: Celebration[];
@@ -137,6 +144,7 @@ export const useStore = create<State>()(
       recents: [],
       trail: [],
       journey: null,
+      pending: null,
       geo: null,
       geoStatus: "idle",
       celebrations: [],
@@ -211,21 +219,36 @@ export const useStore = create<State>()(
       startJourney: (from, to, walkTo, walkFrom) => {
         const plan = planRoute(from, to);
         if (!plan) return false;
+        // A journey that is under way is never thrown away silently: the rider is asked first.
+        const current = get().journey;
+        if (current && current.stage !== "planning" && current.stage !== "complete") {
+          set({ pending: { from, to, walkTo, walkFrom } });
+          return true;
+        }
+        const now = Date.now();
         set((s) => ({
-          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: Date.now(), walkTo, walkFrom },
+          journey: { id: uid(), plan, demo: s.demo, stage: "planning", leg: 0, stop: 1, startedAt: now, updatedAt: now, walkTo, walkFrom },
           recents: [to, ...s.recents.filter((id) => id !== to)].slice(0, 6),
+          pending: null,
         }));
         return true;
       },
+      confirmReplace: () => {
+        const p = get().pending;
+        if (!p) return;
+        set({ journey: null, pending: null });
+        get().startJourney(p.from, p.to, p.walkTo, p.walkFrom);
+      },
+      cancelReplace: () => set({ pending: null }),
 
       choosePlan: (plan) => {
         const j = get().journey;
-        if (j?.stage === "planning" && plan.from === j.plan.from && plan.to === j.plan.to) set({ journey: { ...j, plan } });
+        if (j?.stage === "planning" && plan.from === j.plan.from && plan.to === j.plan.to) set({ journey: { ...j, plan, updatedAt: Date.now() } });
       },
 
       setTracking: (mode) => {
         const j = get().journey;
-        if (j && j.stage !== "complete") set({ journey: { ...j, tracking: mode } });
+        if (j && j.stage !== "complete") set({ journey: { ...j, tracking: mode, updatedAt: Date.now() } });
       },
 
       advanceJourney: () => {
@@ -240,10 +263,10 @@ export const useStore = create<State>()(
           const lastStop = j.stop === leg.stops.length - 1;
           const lastLeg = j.leg === j.plan.legs.length - 1;
           return set({
-            journey: lastStop ? { ...j, stage: lastLeg ? "arriving" : "transferring" } : { ...j, stop: j.stop + 1 },
+            journey: lastStop ? { ...j, updatedAt: now, stage: lastLeg ? "arriving" : "transferring" } : { ...j, updatedAt: now, stop: j.stop + 1 },
           });
         }
-        if (j.stage === "transferring") return set({ journey: { ...j, stage: "waiting", leg: j.leg + 1, stop: 1 } });
+        if (j.stage === "transferring") return set({ journey: { ...j, updatedAt: now, stage: "waiting", leg: j.leg + 1, stop: 1 } });
         if (j.stage === "exploring") {
           const e: JourneyEvent = {
             t: "journey", id: j.id, from: j.plan.from, to: j.plan.to, at: now, demo: j.demo,
@@ -252,13 +275,13 @@ export const useStore = create<State>()(
             minutes: j.plan.minutes, km: j.plan.km,
           };
           reward(e);
-          return set({ journey: { ...j, stage: "complete" } });
+          return set({ journey: { ...j, updatedAt: now, stage: "complete" } });
         }
         const next = NEXT[j.stage];
-        if (next) set({ journey: { ...j, stage: next, ...(next === "traveling" ? { boardedAt: now } : {}) } });
+        if (next) set({ journey: { ...j, updatedAt: now, stage: next, ...(next === "traveling" ? { boardedAt: now } : {}) } });
       },
 
-      endJourney: () => set({ journey: null }),
+      endJourney: () => set({ journey: null, pending: null }),
     }),
     {
       // Storage key predates the rename to Bostie; kept so nobody loses their saved progress.
@@ -289,4 +312,22 @@ export function useWhere(): { at: LatLng | null; source: "gps" | "simulated" | n
     return { at: STATION[id], source: "simulated" };
   }
   return geo ? { at: geo, source: "gps" } : { at: null, source: null };
+}
+
+/**
+ * A saved journey checked against the current network data. Returns it unchanged when it
+ * still makes sense; otherwise re-plans the same trip and keeps the rider's stage where
+ * that is still possible, rather than sending them back to the start.
+ */
+export function repairJourney(j: Journey): { journey: Journey | null; changed: boolean } {
+  const leg = j.plan?.legs?.[j.leg];
+  const sound = !!leg && leg.stops.every((id) => STATION[id]) && j.stop >= 1 && j.stop <= leg.stops.length - 1 + (j.stage === "traveling" ? 0 : 1);
+  if (sound) return { journey: j, changed: false };
+  const plan = j.plan ? planRoute(j.plan.from, j.plan.to) : null;
+  if (!plan) return { journey: null, changed: true };
+  const same = plan.legs.length === j.plan.legs.length && plan.legs.every((l, i) => l.from === j.plan.legs[i].from && l.to === j.plan.legs[i].to);
+  // Same trains as before: keep the stage and stop. A different route: back to choosing it, stations kept.
+  return same
+    ? { journey: { ...j, plan, leg: Math.min(j.leg, plan.legs.length - 1), stop: Math.min(Math.max(1, j.stop), plan.legs[Math.min(j.leg, plan.legs.length - 1)].stops.length - 1), updatedAt: Date.now() }, changed: true }
+    : { journey: { ...j, plan, stage: "planning", leg: 0, stop: 1, updatedAt: Date.now() }, changed: true };
 }

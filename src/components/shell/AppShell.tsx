@@ -7,6 +7,7 @@ import { useGetOffAlerts } from "@/lib/alerts";
 import { useSupabaseSync } from "@/lib/sync";
 import { useJourneyRunner } from "@/lib/tracking";
 import { AlertBanner } from "./AlertBanner";
+import { ReplaceJourney } from "./ReplaceJourney";
 import { Celebrations } from "./Celebrations";
 import { DemoChecklist, DemoStrip } from "./DemoGuide";
 import { GuideButton, Tour } from "./Tour";
@@ -158,6 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {onboarded && <Tour />}
               <Celebrations />
               <AlertBanner />
+              {onboarded && <ReplaceJourney />}
             </>
           )}
         </div>

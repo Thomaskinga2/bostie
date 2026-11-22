@@ -1,11 +1,14 @@
 "use client";
 // Shared by every Bostie's Favourite game: the mascot with his speech bubble, and the
 // header with Exit, progress and the sound switch.
-import { ChevronLeft, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, TrainFront, Volume2, VolumeX, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useState, type ReactNode } from "react";
 import { cx } from "@/components/ui";
+import { useGameReturn } from "@/lib/gameReturn";
+import { STATION } from "@/lib/network";
 import { sfx } from "@/lib/sound";
 import { useStore } from "@/lib/store";
 
@@ -66,20 +69,53 @@ export function SoundToggle({ className }: { className?: string }) {
   );
 }
 
-/** Exit on the left, what game and how far along in the middle, sound on the right. */
-export function GameHeader({ title, progress, onExit, exitLabel = "Games" }: { title: string; progress?: ReactNode; onExit?: () => void; exitLabel?: string }) {
+/**
+ * Shown on every game screen while a journey is under way: where it is going, and one tap
+ * back to it. Closing it only hides it for now; the journey is not affected.
+ */
+export function JourneyBanner({ className }: { className?: string }) {
+  const path = usePathname();
+  const { journey, toJourney } = useGameReturn(path);
+  const [hidden, setHidden] = useState<string | null>(null);
+  if (!journey || hidden === journey.id) return null;
+  const from = journey.walkFrom?.name ?? STATION[journey.plan.from].name;
+  const to = journey.walkTo?.name ?? STATION[journey.plan.to].name;
+  return (
+    <div role="region" aria-label="Active journey" data-testid="journey-banner" data-tour="journey-return" className={cx("flex items-center gap-2 rounded-2xl bg-forest py-1.5 pl-3 pr-1.5 text-paper", className)}>
+      <TrainFront size={17} className="shrink-0 text-gold" aria-hidden />
+      <p className="min-w-0 flex-1 truncate text-[13px] leading-tight">
+        Journey active: <strong className="font-bold">{from} → {to}</strong>
+      </p>
+      <button onClick={toJourney} className="h-8 shrink-0 rounded-full bg-gold px-3 text-[13px] font-bold text-forest-deep">Return to Journey</button>
+      <button onClick={() => setHidden(journey.id)} aria-label="Hide journey banner" className="grid size-8 shrink-0 place-items-center rounded-full text-paper/75"><X size={16} /></button>
+    </div>
+  );
+}
+
+/**
+ * Exit on the left, what game and how far along in the middle, sound on the right. Exit
+ * goes back to the journey when the game was opened from one, otherwise to the games screen.
+ */
+export function GameHeader({ title, progress, onExit, exitLabel }: { title: string; progress?: ReactNode; onExit?: () => void; exitLabel?: string }) {
+  const path = usePathname();
+  const { fromJourney, toJourney } = useGameReturn(path);
   const exit = "flex h-10 shrink-0 items-center gap-0.5 pr-2 text-[15px] font-semibold text-forest";
   return (
-    <header className="flex items-center gap-2 px-3 pt-2">
-      {onExit ? (
-        <button onClick={onExit} className={exit}><ChevronLeft size={20} aria-hidden /> {exitLabel}</button>
-      ) : (
-        <Link href="/play" className={exit}><ChevronLeft size={20} aria-hidden /> {exitLabel}</Link>
-      )}
-      <p className="min-w-0 flex-1 truncate text-center text-[15px] font-bold">{title}</p>
-      {progress && <span className="shrink-0 rounded-full bg-moss px-2.5 py-1 text-[12.5px] font-bold text-forest-deep">{progress}</span>}
-      <SoundToggle />
-    </header>
+    <div className="shrink-0">
+      <header className="flex items-center gap-2 px-3 pt-2">
+        {onExit ? (
+          <button onClick={onExit} className={exit}><ChevronLeft size={20} aria-hidden /> {exitLabel ?? "Games"}</button>
+        ) : fromJourney ? (
+          <button onClick={toJourney} className={exit}><ChevronLeft size={20} aria-hidden /> Journey</button>
+        ) : (
+          <Link href="/play" className={exit}><ChevronLeft size={20} aria-hidden /> {exitLabel ?? "Games"}</Link>
+        )}
+        <p className="min-w-0 flex-1 truncate text-center text-[15px] font-bold">{title}</p>
+        {progress && <span className="shrink-0 rounded-full bg-moss px-2.5 py-1 text-[12.5px] font-bold text-forest-deep">{progress}</span>}
+        <SoundToggle />
+      </header>
+      <JourneyBanner className="mx-3 mt-1.5" />
+    </div>
   );
 }
 

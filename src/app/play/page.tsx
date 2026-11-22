@@ -2,7 +2,7 @@
 // Bostie's Favourite: the hub for the three optional games.
 import { useMemo } from "react";
 import { GameCards } from "@/components/GameList";
-import { Bostie, SoundToggle } from "@/components/games/GameChrome";
+import { Bostie, JourneyBanner, SoundToggle } from "@/components/games/GameChrome";
 import { GeminiChip } from "@/components/shell/Showcase";
 import { PageHeader } from "@/components/ui";
 import { DAILY_PAID_PLAYS } from "@/lib/game";
@@ -16,6 +16,7 @@ export default function PlayHub() {
     <div data-scene="play-lobby" className="scroll-area h-full pb-8">
       <PageHeader title="Bostie's Favourite" sub="Three quick games about Boston. All optional." right={<SoundToggle />} />
       <div className="px-5">
+        <JourneyBanner className="mb-3" />
         <Bostie mood="welcome" say="Ready for a Boston adventure? Pick a game!" size={72} />
 
         <h2 className="mt-5 text-[22px] font-bold">Pick a game</h2>

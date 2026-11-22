@@ -42,6 +42,8 @@ Saved places, service alerts, journey and discovery history, achievement badges,
 | Route planning requirements: official directions, branch-aware departures with platform, Scheduled fallback, step-by-step list, Google transit alternatives, Enter-with-no-match message | Done. Google routes not checked live (no key in local env; needs Routes API enabled on the Vercel key) | Logic tests for directions, train matching, steps and Google-route conversion; four flow tests; live MBTA predictions checked on the dev server |
 | Games listed with pictures on the waiting screen and in Guess Boston | Done | Demo flow test, screenshot |
 | Bostie's Favourite: Bostie Guessing (multiple choice), Bostie Drawing (Gemini sketch judge), Bostie Parkour (3D runner), shared mascot reactions, generated sounds, daily XP limit | Done. Not checked on a real phone: touch drawing feel, 3D frame rate on older devices, sound | Logic tests for questions, XP and the daily limit; flow tests for all three games; a real Gemini call scored a random squiggle 5% |
+| Journey kept while playing: context-aware Back, Return to Journey banner, confirm before replacing, restored-journey check | Done | Three flow tests covering scenarios A to H; logic tests for `repairJourney` |
+| Trips tab: Social-to-Trip, AI generator, manual planner, itinerary with map, hours, travel, reorder, optimize, overview, saved trips | Done. Checked with real Gemini (generator, YouTube link, photos) and OpenStreetMap place checks. Not checked: Google place details (hours, prices, photos), which need the Google key that only exists on Vercel; touch drag on a real phone; a real phone video | Logic tests for legs, ordering, hours, schedule and costs; four flow tests |
 
 ## P2 and not built
 

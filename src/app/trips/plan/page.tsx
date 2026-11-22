@@ -1,0 +1,328 @@
+"use client";
+// One trip: the map on top, the day's stops underneath in visiting order, and how to get
+// between them. Stops can be dragged, optimized, added and removed; the map follows.
+import { ChevronLeft, Clock, Footprints, GripVertical, Plus, Search, Trash2, TrainFront, Wand2 } from "lucide-react";
+import { AnimatePresence, Reorder, useDragControls } from "motion/react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MapLine, MapMarker } from "@/components/map/CityMap";
+import { Sheet } from "@/components/Sheet";
+import { PlacePhoto, priceText } from "@/components/trips/PlacePhoto";
+import { Button, cx, Empty } from "@/components/ui";
+import { useNow } from "@/lib/api";
+import type { TripPlace, TripPlacesResponse } from "@/lib/contracts";
+import { formatFare } from "@/lib/fares";
+import { formatDistance } from "@/lib/geo";
+import { LINES, STATION } from "@/lib/network";
+import { useStore } from "@/lib/store";
+import { asStop, clock, DAY_START, dayTotals, emitTrip, orderStops, schedule, useTrips, type Stop, type Timed, type Trip } from "@/lib/trips";
+
+const CityMap = dynamic(() => import("@/components/map/CityMap").then((m) => m.CityMap), {
+  ssr: false,
+  loading: () => <div className="size-full animate-pulse bg-sand" />,
+});
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** How to get to a stop from the one before: a walk, or a ride that can be started as a guided journey. */
+function LegRow({ t, onRide }: { t: Timed; onRide: () => void }) {
+  const { leg } = t;
+  return (
+    <div className="flex items-center gap-2.5 py-1.5 pl-[18px] text-[13px] text-ink-soft" data-testid="trip-leg">
+      <span aria-hidden className="h-7 w-0.5 rounded bg-line" />
+      {leg.mode === "walk" ? (
+        <span className="flex items-center gap-1.5"><Footprints size={15} aria-hidden /> {leg.minutes} min walk ({formatDistance(leg.km)})</span>
+      ) : (
+        <>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <TrainFront size={15} className="shrink-0" style={{ color: LINES[leg.plan.legs[0].line].color }} aria-hidden />
+            <span className="min-w-0 leading-snug">{leg.summary}</span>
+          </span>
+          <span className="shrink-0 font-semibold tabular-nums text-ink">{leg.minutes} min, {formatFare(leg.fareCents)}</span>
+          <button onClick={onRide} className="h-8 shrink-0 rounded-full bg-forest px-3 text-[12.5px] font-bold text-paper">Ride it</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StopCard({ t, n, selected, onOpen }: { t: Timed; n: number; selected: boolean; onOpen: () => void }) {
+  const drag = useDragControls();
+  const { stop } = t;
+  return (
+    <Reorder.Item value={stop} dragListener={false} dragControls={drag} id={`stop-${stop.key}`} className={cx("flex items-stretch overflow-hidden rounded-2xl border bg-card", selected ? "border-forest shadow-card ring-1 ring-forest" : "border-line")} whileDrag={{ scale: 1.02, boxShadow: "0 10px 28px rgba(0,0,0,0.18)" }}>
+      <button onClick={onOpen} aria-label={`${n}. ${stop.name}`} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left">
+        <span className="relative shrink-0">
+          <PlacePhoto place={stop} className="size-[68px] rounded-xl" />
+          <span className="absolute -left-1 -top-1 grid size-6 place-items-center rounded-full bg-forest text-[12px] font-bold text-paper ring-2 ring-card">{n}</span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[16px] font-bold">{stop.name}</span>
+          <span className="block truncate text-[13px] text-ink-soft">{[stop.category, priceText(stop), stop.rating ? `${stop.rating.toFixed(1)} stars` : null].filter(Boolean).join(" · ") || stop.address}</span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
+            <span className="flex items-center gap-1 text-ink-soft"><Clock size={13} aria-hidden /> {clock(t.arrive)}, {stop.minutes} min</span>
+            <span className={cx("rounded-full px-2 py-0.5 text-[11.5px] font-bold leading-none", t.open === true ? "bg-moss text-forest-deep" : t.open === false ? "bg-[#fbe4e1] text-[#8a1a12]" : "bg-sand text-ink-soft")}>
+              {t.open === true ? "Open then" : t.open === false ? "Closed then" : "Hours not listed"}
+            </span>
+          </span>
+        </span>
+      </button>
+      <span onPointerDown={(e) => drag.start(e)} aria-hidden className="grid w-10 shrink-0 cursor-grab touch-none place-items-center text-ink-faint active:cursor-grabbing"><GripVertical size={20} /></span>
+    </Reorder.Item>
+  );
+}
+
+/** Search for a place and add it to the day. */
+function AddPlace({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (p: TripPlace) => void }) {
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<{ q: string; state: "loading" | "done" | "failed"; places: TripPlace[] } | null>(null);
+  const text = q.trim();
+  useEffect(() => {
+    if (text.length < 3) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/trips/places?q=${encodeURIComponent(text)}`, { signal: ctl.signal });
+        if (!res.ok) throw new Error(String(res.status));
+        setFound({ q: text, state: "done", places: ((await res.json()) as TripPlacesResponse).places });
+      } catch {
+        if (!ctl.signal.aborted) setFound({ q: text, state: "failed", places: [] });
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [text]);
+  const current = found?.q === text ? found : null;
+  return (
+    <Sheet open={open} onClose={onClose} title="Add a place" tall>
+      <label className="flex h-12 items-center gap-2.5 rounded-2xl border border-line bg-paper px-3.5">
+        <Search size={18} className="shrink-0 text-ink-soft" aria-hidden />
+        <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search for a place" placeholder="Cafe, museum, park, address…" autoComplete="off" className="min-w-0 flex-1 bg-transparent text-[16px] placeholder:text-ink-faint" style={{ outline: "none" }} />
+      </label>
+      <ul className="mt-3 space-y-2" aria-label="Places" aria-busy={text.length >= 3 && !current}>
+        {text.length < 3 ? (
+          <li className="px-1 text-[14px] text-ink-soft">Type at least three letters. Bostie only plans around Greater Boston.</li>
+        ) : !current ? (
+          [0, 1, 2].map((i) => <li key={i} className="h-[76px] animate-pulse rounded-2xl bg-sand" />)
+        ) : current.state === "failed" ? (
+          <li className="px-1 text-[14px] text-ink-soft">Place search is unavailable right now. Try again in a moment.</li>
+        ) : !current.places.length ? (
+          <li className="px-1 text-[14px] text-ink-soft">Nothing in Greater Boston matches “{text}”.</li>
+        ) : (
+          current.places.map((p) => (
+            <li key={p.id}>
+              <button onClick={() => (onAdd(p), setQ(""), onClose())} aria-label={`Add ${p.name}`} className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-2 text-left">
+                <PlacePhoto place={p} className="size-[60px] shrink-0 rounded-xl" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15.5px] font-bold">{p.name}</span>
+                  <span className="block truncate text-[13px] text-ink-soft">{[p.category, priceText(p)].filter(Boolean).join(" · ") || p.address}</span>
+                  <span className="block truncate text-[12.5px] text-ink-faint">{p.address}</span>
+                </span>
+                <Plus size={20} className="shrink-0 text-forest" aria-hidden />
+              </button>
+            </li>
+          ))
+        )}
+      </ul>
+    </Sheet>
+  );
+}
+
+export default function TripPlanPage() {
+  const router = useRouter();
+  const trip = useTrips((s) => s.trips.find((t) => t.id === s.currentId));
+  const update = useTrips((s) => s.update);
+  const remove = useTrips((s) => s.remove);
+  const startJourney = useStore((s) => s.startJourney);
+  const now = useNow(60_000);
+  const [day, setDay] = useState(0);
+  const [tab, setTab] = useState<"plan" | "overview">("plan");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+
+  const weekday = new Date(now).getDay();
+  const d = Math.min(day, (trip?.days.length ?? 1) - 1);
+  const stops = useMemo(() => trip?.days[d] ?? [], [trip, d]);
+  const timed = useMemo(() => (trip ? schedule(stops, trip.startStationId, weekday) : []), [trip, stops, weekday]);
+  const totals = dayTotals(timed);
+
+  // The map shows the day in order: the start, each stop, and the way between them.
+  const map = useMemo(() => {
+    if (!trip) return null;
+    const start = STATION[trip.startStationId];
+    const markers: MapMarker[] = [
+      ...(start ? [{ id: "start", kind: "station" as const, label: `Start: ${start.name}`, lat: start.lat, lng: start.lng, color: LINES[start.lines[0]].color }] : []),
+      ...timed.map((t, i) => ({ id: t.stop.key, kind: "landmark" as const, label: `${i + 1}. ${t.stop.name}`, lat: t.stop.lat, lng: t.stop.lng })),
+    ];
+    const lines: MapLine[] = [];
+    let at = start ? { lat: start.lat, lng: start.lng } : null;
+    timed.forEach((t, i) => {
+      const to = { lat: t.stop.lat, lng: t.stop.lng };
+      if (t.leg.mode === "transit") {
+        t.leg.plan.legs.forEach((l, k) => lines.push({ id: `r${i}-${k}`, color: LINES[l.line].color, emphasis: true, path: l.stops.map((id) => ({ lat: STATION[id].lat, lng: STATION[id].lng })) }));
+        if (at) lines.push({ id: `in${i}`, color: "#1f4b3a", dashed: true, path: [at, { lat: t.leg.from.lat, lng: t.leg.from.lng }] });
+        lines.push({ id: `out${i}`, color: "#1f4b3a", dashed: true, path: [{ lat: t.leg.to.lat, lng: t.leg.to.lng }, to] });
+      } else if (at) lines.push({ id: `w${i}`, color: "#1f4b3a", dashed: true, emphasis: true, path: [at, to] });
+      at = to;
+    });
+    return { markers, lines, fit: markers.map((m) => ({ lat: m.lat, lng: m.lng })) };
+  }, [trip, timed]);
+
+  if (!trip)
+    return (
+      <div className="grid h-full place-items-center px-6">
+        <Empty title="No trip open" body="Pick a saved trip or start a new one." action={<Link href="/trips" className="inline-flex h-11 items-center rounded-full bg-forest px-6 text-[15px] font-bold text-paper">Go to Trips</Link>} />
+      </div>
+    );
+
+  const setStops = (next: Stop[]) => update(trip.id, (t) => ({ ...t, days: t.days.map((x, i) => (i === d ? next : x)) }));
+  const open = timed.find((t) => t.stop.key === detail);
+  const openIndex = stops.findIndex((s) => s.key === detail);
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= stops.length) return;
+    const next = [...stops];
+    next.splice(to, 0, ...next.splice(from, 1));
+    setStops(next);
+  };
+  const select = (key: string) => {
+    setSelected(key);
+    list.current?.querySelector(`#stop-${key}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const ride = (t: Timed) => {
+    if (t.leg.mode !== "transit") return;
+    emitTrip({ t: "leg-started", tripId: trip.id, placeId: t.stop.id });
+    const walkTo = { name: t.stop.name, address: t.stop.address, lat: t.stop.lat, lng: t.stop.lng, minutes: t.leg.walkOut, km: t.leg.km };
+    if (startJourney(t.leg.from.id, t.leg.to.id, walkTo)) router.push("/journey");
+  };
+  const allDays = trip.days.map((x) => dayTotals(schedule(x, trip.startStationId, weekday)));
+
+  return (
+    <div data-scene="trip-plan" className="flex h-full flex-col">
+      <header className="flex shrink-0 items-center gap-1 px-3 pt-2">
+        <Link href="/trips" className="flex h-10 shrink-0 items-center gap-0.5 pr-2 text-[15px] font-semibold text-forest"><ChevronLeft size={20} aria-hidden /> Trips</Link>
+        <input value={trip.name} onChange={(e) => update(trip.id, (t) => ({ ...t, name: e.target.value.slice(0, 60) }))} aria-label="Trip name" className="h-10 min-w-0 flex-1 rounded-xl bg-transparent px-2 text-center text-[16px] font-bold focus:bg-card" />
+        <button onClick={() => (remove(trip.id), router.push("/trips"))} aria-label="Delete this trip" className="grid size-10 shrink-0 place-items-center rounded-full text-ink-soft"><Trash2 size={18} /></button>
+      </header>
+
+      <div data-tour="trip-map" className="relative mx-4 mt-1 h-[190px] shrink-0 overflow-hidden rounded-3xl border border-line">
+        {map && <CityMap className="size-full" markers={map.markers} lines={map.lines} fit={map.fit.length > 1 ? map.fit : undefined} center={map.fit[0]} zoom={14} selectedId={selected} onSelect={select} />}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2 px-4 pt-3">
+        <div role="tablist" aria-label="Days" className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+          {trip.days.map((_, i) => (
+            <button key={i} role="tab" aria-selected={tab === "plan" && i === d} onClick={() => (setDay(i), setTab("plan"), setSelected(null))} className={cx("h-9 shrink-0 rounded-full px-3.5 text-[13.5px] font-bold", tab === "plan" && i === d ? "bg-forest text-paper" : "bg-sand text-ink-soft")}>Day {i + 1}</button>
+          ))}
+          {trip.days.length < 3 && (
+            <button onClick={() => (update(trip.id, (t) => ({ ...t, days: [...t.days, []] })), setDay(trip.days.length), setTab("plan"))} aria-label="Add a day" className="grid size-9 shrink-0 place-items-center rounded-full bg-sand text-ink-soft"><Plus size={17} /></button>
+          )}
+          <button role="tab" aria-selected={tab === "overview"} onClick={() => setTab("overview")} className={cx("h-9 shrink-0 rounded-full px-3.5 text-[13.5px] font-bold", tab === "overview" ? "bg-forest text-paper" : "bg-sand text-ink-soft")}>Overview</button>
+        </div>
+      </div>
+
+      <div ref={list} className="scroll-area min-h-0 flex-1 px-4 pb-6 pt-3">
+        {tab === "overview" ? (
+          <section aria-label="Trip overview" data-testid="trip-overview">
+            <ul className="space-y-2.5">
+              {allDays.map((t, i) => (
+                <li key={i} className="rounded-2xl border border-line bg-card px-4 py-3">
+                  <p className="text-[16px] font-bold">Day {i + 1}</p>
+                  {t.stops ? (
+                    <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[14px]">
+                      <dt className="text-ink-soft">Stops</dt><dd className="text-right font-semibold">{t.stops}</dd>
+                      <dt className="text-ink-soft">Time out</dt><dd className="text-right font-semibold">{Math.floor(t.minutes / 60)} h {t.minutes % 60} min</dd>
+                      <dt className="text-ink-soft">Walking</dt><dd className="text-right font-semibold">{formatDistance(t.walkKm)}</dd>
+                      <dt className="text-ink-soft">T rides</dt><dd className="text-right font-semibold">{t.rides}</dd>
+                      <dt className="text-ink-soft">T fares</dt><dd className="text-right font-semibold">{formatFare(t.transitCents)}{t.passIsCheaper ? " (1-Day Pass)" : ""}</dd>
+                      <dt className="text-ink-soft">Food and tickets</dt><dd className="text-right font-semibold">{t.priced ? `$${t.placesLow} to $${t.placesHigh}` : "Not listed"}</dd>
+                    </dl>
+                  ) : (
+                    <p className="mt-1 text-[14px] text-ink-soft">No stops yet.</p>
+                  )}
+                  {t.closed > 0 && <p className="mt-2 rounded-xl bg-[#fbe4e1] px-3 py-2 text-[13px] font-semibold text-[#8a1a12]">{t.closed} stop{t.closed === 1 ? " is" : "s are"} closed at the planned time.</p>}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-[12.5px] leading-snug text-ink-faint">
+              Times assume a {clock(DAY_START)} start on a {WEEKDAYS[weekday]}. T fares are the MBTA&apos;s published adult fares, with the 1-Day Pass used when it is cheaper. Food and ticket ranges are Google&apos;s, per person, and only cover the places that list one. Ride times are estimates.
+            </p>
+          </section>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2" data-tour="trip-tools">
+              <p className="text-[13.5px] text-ink-soft" data-testid="trip-day-summary">
+                {totals.stops ? `${totals.stops} stops, about ${Math.floor(totals.minutes / 60)} h ${totals.minutes % 60} min, T fares ${formatFare(totals.transitCents)}` : "Nothing planned for this day yet."}
+              </p>
+              <div className="flex shrink-0 gap-1.5">
+                <Button size="sm" variant="secondary" disabled={stops.length < 3} onClick={() => (setStops(orderStops(STATION[trip.startStationId], stops)), emitTrip({ t: "trip-optimized", tripId: trip.id, day: d }))}><Wand2 size={15} aria-hidden /> Optimize</Button>
+                <Button size="sm" onClick={() => setAdding(true)}><Plus size={15} aria-hidden /> Add</Button>
+              </div>
+            </div>
+            {stops.length ? (
+              <Reorder.Group axis="y" values={stops} onReorder={setStops} data-tour="trip-list" aria-label={`Day ${d + 1} stops`} className="mt-2">
+                {timed.map((t, i) => (
+                  <div key={t.stop.key}>
+                    <LegRow t={t} onRide={() => ride(t)} />
+                    <StopCard t={t} n={i + 1} selected={selected === t.stop.key} onOpen={() => (setSelected(t.stop.key), setDetail(t.stop.key))} />
+                  </div>
+                ))}
+              </Reorder.Group>
+            ) : (
+              <div data-tour="trip-list" className="mt-3">
+                <Empty title="An empty day" body="Add a place to start. Bostie works out the walking and the T between your stops." action={<Button onClick={() => setAdding(true)}><Plus size={16} aria-hidden /> Add a place</Button>} />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <AddPlace open={adding} onClose={() => setAdding(false)} onAdd={(p) => (setStops([...stops, asStop({ ...p, why: null, minutes: 45 })]), emitTrip({ t: "stop-added", tripId: trip.id, placeId: p.id }))} />
+
+      <Sheet open={!!open} onClose={() => setDetail(null)} title={open?.stop.name} tall>
+        <AnimatePresence>
+          {open && (
+            <div data-testid="trip-stop-detail">
+              <PlacePhoto place={open.stop} className="h-[170px] w-full rounded-2xl" />
+              <p className="mt-3 text-[14px] text-ink-soft">{[open.stop.category, priceText(open.stop), open.stop.rating ? `${open.stop.rating.toFixed(1)} stars on Google` : null].filter(Boolean).join(" · ")}</p>
+              <p className="text-[14px] text-ink-soft">{open.stop.address}</p>
+              {open.stop.summary && <p className="mt-2 text-[15.5px] leading-snug">{open.stop.summary}</p>}
+              {open.stop.why && <p className="mt-2 rounded-2xl bg-moss px-3.5 py-2.5 text-[14.5px] leading-snug text-forest-deep">{open.stop.why}</p>}
+              <div className="mt-3 flex items-center justify-between rounded-2xl border border-line px-3.5 py-2.5">
+                <span className="text-[14.5px]">Arrive {clock(open.arrive)}, stay <strong>{open.stop.minutes} min</strong></span>
+                <span className="flex gap-1.5">
+                  {[-15, 15].map((step) => (
+                    <button key={step} aria-label={step < 0 ? "Stay 15 minutes less" : "Stay 15 minutes more"} onClick={() => setStops(stops.map((s) => (s.key === open.stop.key ? { ...s, minutes: Math.min(240, Math.max(15, s.minutes + step)) } : s)))} className="grid size-9 place-items-center rounded-full bg-sand text-[18px] font-bold">{step < 0 ? "−" : "+"}</button>
+                  ))}
+                </span>
+              </div>
+              {open.stop.hours?.week.length ? (
+                <ul className="mt-3 space-y-0.5 text-[13.5px] text-ink-soft" aria-label="Opening hours">{open.stop.hours.week.map((w) => <li key={w}>{w}</li>)}</ul>
+              ) : (
+                <p className="mt-3 text-[13.5px] text-ink-soft">Opening hours are not listed for this place. Check before you go.</p>
+              )}
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button variant="secondary" disabled={openIndex <= 0} onClick={() => move(openIndex, openIndex - 1)}>Move earlier</Button>
+                <Button variant="secondary" disabled={openIndex >= stops.length - 1} onClick={() => move(openIndex, openIndex + 1)}>Move later</Button>
+              </div>
+              {trip.days.length > 1 && (
+                <div className="mt-2 flex gap-2">
+                  {trip.days.map((_, i) => i !== d && (
+                    <Button key={i} variant="secondary" className="flex-1" onClick={() => (update(trip.id, (t) => ({ ...t, days: t.days.map((x, k) => (k === d ? x.filter((s) => s.key !== open.stop.key) : k === i ? [...x, open.stop] : x)) })), setDetail(null))}>Move to day {i + 1}</Button>
+                  ))}
+                </div>
+              )}
+              <Button variant="quiet" className="mt-2 w-full" onClick={() => (setStops(stops.filter((s) => s.key !== open.stop.key)), setDetail(null))}><Trash2 size={16} aria-hidden /> Remove from trip</Button>
+            </div>
+          )}
+        </AnimatePresence>
+      </Sheet>
+    </div>
+  );
+}
+
+export type { Trip };

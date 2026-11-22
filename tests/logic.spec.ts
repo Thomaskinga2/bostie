@@ -15,8 +15,10 @@ import { GUIDE_STEPS, TOUR } from "../src/lib/guide";
 import { bestStationFor, legInfo, planFromStops, planRoute, routeOptions, servesLeg, STATION, STATIONS, tripSteps } from "../src/lib/network";
 import { PLACE } from "../src/lib/places";
 import { dayRecap, heatPoints, trailSegments } from "../src/lib/recap";
-import type { Journey } from "../src/lib/store";
+import { repairJourney, type Journey } from "../src/lib/store";
 import { estimateAlert, getOffAlert } from "../src/lib/alerts";
+import type { TripStop } from "../src/lib/contracts";
+import { cataloguePhoto, clock, dayTotals, isOpenAt, legBetween, orderStops, schedule, type Stop } from "../src/lib/trips";
 import { autoSteps } from "../src/lib/tracking";
 
 const DAY = 86_400_000;
@@ -559,5 +561,91 @@ test.describe("get-off alerts", () => {
     expect(due.body).toMatch(/By the timetable/); // says it is an estimate
     expect(estimateAlert(j({}))).toBeNull(); // never boarded
     expect(estimateAlert(j({ boardedAt, stage: "waiting" }))).toBeNull();
+  });
+});
+
+test.describe("a saved journey", () => {
+  const plan = planRoute("place-harsq", "place-pktrm")!;
+  const j = (over: Partial<Journey>): Journey => ({ id: "j", plan, demo: false, stage: "waiting", leg: 0, stop: 1, startedAt: 0, ...over });
+
+  test("is restored exactly as it was when it still makes sense", () => {
+    const saved = j({ stage: "traveling", stop: 3, tracking: "auto" });
+    expect(repairJourney(saved)).toEqual({ journey: saved, changed: false });
+  });
+
+  test("is re-planned between the same stations, keeping the stage, when its route data is out of date", () => {
+    const stale = j({ stage: "waiting", plan: { ...plan, legs: [{ ...plan.legs[0], stops: ["place-harsq", "place-gone", "place-pktrm"] }] } });
+    const { journey, changed } = repairJourney(stale);
+    expect(changed).toBe(true);
+    expect(journey).toMatchObject({ id: "j", stage: "waiting", leg: 0 }); // not sent back to Plan
+    expect(journey!.plan.legs[0].stops).toEqual(plan.legs[0].stops);
+    expect([journey!.plan.from, journey!.plan.to]).toEqual(["place-harsq", "place-pktrm"]);
+  });
+
+  test("is closed only when the trip itself can no longer be planned", () => {
+    expect(repairJourney(j({ leg: 5, plan: { ...plan, from: "place-gone" } }))).toEqual({ journey: null, changed: true });
+  });
+});
+
+test.describe("Trips planning", () => {
+  const at = (id: string) => ({ lat: STATION[id].lat, lng: STATION[id].lng });
+  const stop = (key: string, p: { lat: number; lng: number }, over: Partial<TripStop> = {}): Stop => ({
+    key, id: key, name: key, address: "", ...p, category: null, rating: null, priceLevel: null, priceRange: null, hours: null, photo: null, summary: null, provider: "google", why: null, minutes: 45, ...over,
+  });
+
+  test("short hops are walked; longer ones take the T, with the published fare", () => {
+    const near = legBetween(at("place-pktrm"), { lat: 42.3587, lng: -71.0638 }); // Park Street to the State House
+    expect(near.mode).toBe("walk");
+    const far = legBetween(at("place-harsq"), at("place-pktrm"));
+    expect(far.mode).toBe("transit");
+    if (far.mode !== "transit") return;
+    expect([far.from.id, far.to.id]).toEqual(["place-harsq", "place-pktrm"]);
+    expect(far.fareCents).toBe(240);
+    expect(far.summary).toBe("Red Line: Harvard to Park Street");
+    expect(far.minutes).toBeLessThan(legBetween(at("place-harsq"), at("place-pktrm")).km * 20); // quicker than walking it
+    expect(legBetween({ lat: 42.2, lng: -71.25 }, at("place-pktrm")).mode).toBe("walk"); // nowhere near a station: no invented ride
+  });
+
+  test("optimizing visits nearby places together instead of crossing town twice", () => {
+    const [a, b, c, d] = [stop("harvard", at("place-harsq")), stop("south", at("place-sstat")), stop("central", at("place-cntsq")), stop("dtx", at("place-dwnxg"))];
+    const order = orderStops(at("place-alfcl"), [a, b, c, d]).map((s) => s.key);
+    expect(order).toEqual(["harvard", "central", "dtx", "south"]);
+    expect(orderStops(at("place-alfcl"), [])).toEqual([]);
+  });
+
+  test("opening hours: open, closed, past midnight, and unknown", () => {
+    const hours = { week: [], periods: [{ day: 1, open: 600, close: 1020 }, { day: 6, open: 1080, close: 1560 }] }; // Mon 10-5, Sat 6pm-2am
+    expect(isOpenAt(hours, 1, 660)).toBe(true);
+    expect(isOpenAt(hours, 1, 1030)).toBe(false);
+    expect(isOpenAt(hours, 2, 660)).toBe(false);
+    expect(isOpenAt(hours, 0, 60)).toBe(true); // 1 am Sunday is still Saturday night
+    expect(isOpenAt(hours, 0, 180)).toBe(false);
+    expect(isOpenAt(null, 1, 660)).toBeNull();
+    expect(isOpenAt({ week: [], periods: [] }, 1, 660)).toBeNull();
+  });
+
+  test("a day is timed from 10 AM: travel, then the visit, and closed stops are flagged", () => {
+    const day = [stop("a", at("place-harsq"), { minutes: 60, hours: { week: [], periods: [{ day: 3, open: 540, close: 1020 }] } }), stop("b", at("place-pktrm"), { minutes: 30, hours: { week: [], periods: [{ day: 3, open: 1200, close: 1380 }] } })];
+    const timed = schedule(day, "place-harsq", 3);
+    expect(timed[0].arrive).toBe(600 + timed[0].leg.minutes);
+    expect(timed[0].leave).toBe(timed[0].arrive + 60);
+    expect(timed[1].arrive).toBe(timed[0].leave + timed[1].leg.minutes);
+    expect(timed.map((t) => t.open)).toEqual([true, false]); // the second opens at 8 PM
+    expect(dayTotals(timed)).toMatchObject({ stops: 2, rides: 1, transitCents: 240, closed: 1, priced: 0 });
+    expect(clock(600)).toBe("10:00 AM");
+    expect(clock(13 * 60 + 5)).toBe("1:05 PM");
+  });
+
+  test("costs: fares are exact, a 1-Day Pass caps them, and place costs only count what Google lists", () => {
+    const hop = ["place-harsq", "place-pktrm", "place-harsq", "place-pktrm", "place-harsq", "place-pktrm"].map((id, i) => stop(`s${i}`, at(id), i === 1 ? { priceRange: { low: 10, high: 20 } } : {}));
+    const totals = dayTotals(schedule(hop, "place-pktrm", 3));
+    expect(totals.rides).toBe(6);
+    expect(totals).toMatchObject({ transitCents: 1100, passIsCheaper: true, placesLow: 10, placesHigh: 20, priced: 1 });
+    expect(dayTotals([])).toMatchObject({ stops: 0, minutes: 0, transitCents: 0 });
+  });
+
+  test("a place Bostie already knows gets its own photo; a stranger does not", () => {
+    expect(cataloguePhoto({ name: "Massachusetts State House", lat: PLACE["state-house"].lat, lng: PLACE["state-house"].lng })).toBe("state-house");
+    expect(cataloguePhoto({ name: "Some Cafe", lat: PLACE["state-house"].lat, lng: PLACE["state-house"].lng })).toBeNull();
   });
 });

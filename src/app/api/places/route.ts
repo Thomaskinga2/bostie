@@ -7,68 +7,12 @@
 // Bostie's own MBTA planner, never by a model.
 import { distanceKm } from "@/lib/geo";
 import { fail, rateLimited } from "@/lib/server/http";
+import { google, inBox, photon } from "@/lib/server/places";
 import type { PlaceHit, PlacesResponse } from "@/lib/contracts";
-
-/** Greater Boston, roughly the reach of the rapid-transit network. */
-const BOX = { south: 42.18, west: -71.3, north: 42.46, east: -70.95 };
-const CENTER = { lat: 42.3601, lng: -71.0589 };
-const inBox = (p: { lat: number; lng: number }) => p.lat >= BOX.south && p.lat <= BOX.north && p.lng >= BOX.west && p.lng <= BOX.east;
 
 // ponytail: per-instance memory cache, enough to absorb repeated typing in a demo.
 const cache = new Map<string, { at: number; body: PlacesResponse }>();
 const TTL = 10 * 60_000;
-
-async function google(q: string, key: string): Promise<PlaceHit[]> {
-  const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Goog-Api-Key": key,
-      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
-    },
-    body: JSON.stringify({
-      textQuery: q,
-      maxResultCount: 6,
-      locationBias: { circle: { center: { latitude: CENTER.lat, longitude: CENTER.lng }, radius: 20_000 } },
-    }),
-    signal: AbortSignal.timeout(8000),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`Google Places ${res.status}`);
-  const data = (await res.json()) as {
-    places?: { id: string; displayName?: { text: string }; formattedAddress?: string; location?: { latitude: number; longitude: number } }[];
-  };
-  return (data.places ?? [])
-    .filter((p) => p.location && p.displayName?.text)
-    .map((p) => ({ id: `g:${p.id}`, name: p.displayName!.text, address: p.formattedAddress ?? "", lat: p.location!.latitude, lng: p.location!.longitude }));
-}
-
-type PhotonFeature = {
-  geometry: { coordinates: [number, number] };
-  properties: { osm_id?: number; osm_key?: string; osm_value?: string; name?: string; housenumber?: string; street?: string; city?: string; district?: string; locality?: string };
-};
-
-async function photon(q: string): Promise<PlaceHit[]> {
-  const url = new URL("https://photon.komoot.io/api/");
-  url.search = new URLSearchParams({
-    q, limit: "10", lang: "en", lat: String(CENTER.lat), lon: String(CENTER.lng),
-    bbox: [BOX.west, BOX.south, BOX.east, BOX.north].join(","),
-  }).toString();
-  const res = await fetch(url, { headers: { "User-Agent": "BostieApp/1.0 (MBTA exploration demo)" }, signal: AbortSignal.timeout(8000), cache: "no-store" });
-  if (!res.ok) throw new Error(`Photon ${res.status}`);
-  const data = (await res.json()) as { features?: PhotonFeature[] };
-  return (data.features ?? [])
-    // Transit stops are already in the station list.
-    .filter((f) => f.properties.osm_key !== "railway" && f.properties.osm_key !== "public_transport" && f.properties.osm_value !== "bus_stop")
-    .map((f) => {
-      const p = f.properties;
-      const street = [p.housenumber, p.street].filter(Boolean).join(" ");
-      const name = p.name ?? street;
-      const address = [p.name ? street : "", p.city ?? p.district ?? p.locality ?? ""].filter(Boolean).join(", ");
-      return { id: `o:${p.osm_id ?? name}`, name, address, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] };
-    })
-    .filter((h) => h.name);
-}
 
 export async function GET(req: Request) {
   if (rateLimited(req, "places", 40)) return fail(429, "rate_limited");
